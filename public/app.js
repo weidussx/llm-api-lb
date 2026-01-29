@@ -68,6 +68,16 @@ const I18N = {
     "btn.disable": "禁用",
     "btn.delete": "删除",
 
+    "section.launcher": "启动",
+    "launcher.desc": "设置端口并启动服务（默认 8787）。",
+    "launcher.port": "端口",
+    "launcher.btn.start": "启动",
+    "launcher.starting": "正在启动…",
+    "launcher.started": "已启动：{url}",
+    "launcher.portInvalid": "端口无效，请输入 1-65535",
+    "launcher.portInUse": "端口已被占用，请换一个",
+    "launcher.startFail": "启动失败：{message}",
+
     "section.addKey": "新增 APIKey",
     "section.keys": "已管理的 Keys",
     "section.usage": "使用方式",
@@ -158,6 +168,16 @@ const I18N = {
     "btn.enable": "Enable",
     "btn.disable": "Disable",
     "btn.delete": "Delete",
+
+    "section.launcher": "Start",
+    "launcher.desc": "Choose a port and start the service (default 8787).",
+    "launcher.port": "Port",
+    "launcher.btn.start": "Start",
+    "launcher.starting": "Starting…",
+    "launcher.started": "Started: {url}",
+    "launcher.portInvalid": "Invalid port. Use 1-65535",
+    "launcher.portInUse": "Port is already in use. Choose another",
+    "launcher.startFail": "Start failed: {message}",
 
     "section.addKey": "Add API Key",
     "section.keys": "Managed Keys",
@@ -796,8 +816,120 @@ async function refreshAll() {
   }
 }
 
+function setLauncherVisible(visible) {
+  const card = document.getElementById("launcherCard");
+  if (!card) return;
+  card.style.display = visible ? "" : "none";
+}
+
+function hideNonLauncherSections() {
+  document.querySelectorAll("main .card").forEach((node) => {
+    if (node && node.id === "launcherCard") return;
+    node.style.display = "none";
+  });
+  const btnSetToken = document.getElementById("btnSetToken");
+  const btnRefresh = document.getElementById("btnRefresh");
+  if (btnSetToken) btnSetToken.style.display = "none";
+  if (btnRefresh) btnRefresh.style.display = "none";
+}
+
+async function fetchLauncherInfo() {
+  try {
+    const res = await fetch("/launcher/info", { headers: { "content-type": "application/json" } });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function normalizePort(raw) {
+  const n = Number(String(raw || "").trim());
+  if (!Number.isFinite(n)) return null;
+  const p = Math.trunc(n);
+  if (p < 1 || p > 65535) return null;
+  return p;
+}
+
+async function waitForHealth(url, timeoutMs = 12_000) {
+  const startedAt = Date.now();
+  const healthUrl = url.endsWith("/") ? `${url}health` : `${url}/health`;
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const res = await fetch(healthUrl, { cache: "no-store" });
+      if (res.ok) return true;
+    } catch {
+      // ignore
+    }
+    await new Promise((r) => setTimeout(r, 350));
+  }
+  return false;
+}
+
+async function initLauncher(defaultPort) {
+  hideNonLauncherSections();
+  setLauncherVisible(true);
+
+  const input = document.getElementById("launcherPort");
+  const hint = document.getElementById("launcherHint");
+  const form = document.getElementById("formLauncher");
+  const btn = document.getElementById("btnLauncherStart");
+
+  input.value = String(defaultPort || 8787);
+  hint.textContent = "";
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    hint.textContent = "";
+    hint.classList.remove("error");
+
+    const port = normalizePort(input.value);
+    if (!port) {
+      hint.textContent = t("launcher.portInvalid");
+      hint.classList.add("error");
+      return;
+    }
+
+    btn.disabled = true;
+    hint.textContent = t("launcher.starting");
+    try {
+      const res = await fetch("/launcher/start", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ port })
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        const msg = data && data.error ? data.error : `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      const url = data && data.url ? data.url : `http://localhost:${port}/`;
+      hint.textContent = t("launcher.started", { url });
+
+      const ok = await waitForHealth(url);
+      if (ok) window.location.href = url;
+      else window.location.href = url;
+    } catch (err) {
+      const msg = err.message === "port_in_use" ? t("launcher.portInUse") : err.message;
+      hint.textContent = t("launcher.startFail", { message: msg });
+      hint.classList.add("error");
+      btn.disabled = false;
+    }
+  });
+}
+
 async function main() {
   applyI18n();
+  const launcherInfo = await fetchLauncherInfo();
+  if (launcherInfo && launcherInfo.launcher) {
+    await initLauncher(launcherInfo.defaultPort || 8787);
+    document.getElementById("btnLangToggle").addEventListener("click", async () => {
+      setLang(currentLang() === "en" ? "zh" : "en");
+      applyI18n();
+    });
+    return;
+  }
+
   fillUsage();
   ensureToggleDefaults();
   setSelectedHint(getMonitorSelectedKeyIds());

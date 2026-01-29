@@ -20,6 +20,21 @@
         </div>
       </header>
 
+      <section id="launcherCard" class="card" style="display: none">
+        <h2 data-i18n="section.launcher">启动</h2>
+        <div class="muted" data-i18n="launcher.desc">设置端口并启动服务（默认 8787）。</div>
+        <form id="formLauncher" class="grid" style="margin-top: 12px">
+          <label>
+            <span data-i18n="launcher.port">端口</span>
+            <input id="launcherPort" inputmode="numeric" placeholder="8787" />
+          </label>
+          <div class="right">
+            <button id="btnLauncherStart" type="submit" data-i18n="launcher.btn.start">启动</button>
+          </div>
+        </form>
+        <div id="launcherHint" class="hint"></div>
+      </section>
+
       <section class="card">
         <h2 data-i18n="section.addKey">新增 APIKey</h2>
         <form id="formAdd" class="grid">

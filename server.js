@@ -2,7 +2,9 @@ require("dotenv").config();
 
 const crypto = require("crypto");
 const fs = require("fs/promises");
+const net = require("net");
 const path = require("path");
+const { spawn } = require("child_process");
 const express = require("express");
 const promClient = require("prom-client");
 const { Readable } = require("stream");
@@ -13,8 +15,21 @@ const DATA_FILE = process.env.DATA_FILE || path.join(process.cwd(), "data", "sta
 
 const METRICS_PATH = process.env.METRICS_PATH || "/metrics";
 
+const IS_PKG = Boolean(process.pkg);
+const LAUNCHER_MODE = process.env.LAUNCHER_MODE ? process.env.LAUNCHER_MODE === "1" : IS_PKG;
+const AUTO_OPEN_BROWSER = process.env.AUTO_OPEN_BROWSER ? process.env.AUTO_OPEN_BROWSER === "1" : IS_PKG;
+
 function nowIso() {
   return new Date().toISOString();
+}
+
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", () => resolve(false));
+    server.once("listening", () => server.close(() => resolve(true)));
+    server.listen(port, "127.0.0.1");
+  });
 }
 
 function normalizeProvider(raw) {
@@ -350,6 +365,9 @@ function sendUpstreamResponse(res, upstreamRes) {
 }
 
 const app = express();
+let runtimeMode = LAUNCHER_MODE ? "launcher" : "main";
+let runtimeListenPort = null;
+let launcherReason = null;
 
 app.get("/health", (req, res) => {
   res.json({ ok: true });
@@ -358,6 +376,48 @@ app.get("/health", (req, res) => {
 app.get(METRICS_PATH, async (req, res) => {
   res.setHeader("Content-Type", metricsRegistry.contentType);
   res.end(await metricsRegistry.metrics());
+});
+
+app.get("/launcher/info", (req, res) => {
+  res.json({
+    launcher: runtimeMode === "launcher",
+    defaultPort: PORT,
+    listenPort: runtimeListenPort,
+    reason: launcherReason
+  });
+});
+
+app.post("/launcher/start", express.json({ limit: "20kb" }), async (req, res) => {
+  if (runtimeMode !== "launcher") return res.status(409).json({ error: "not_in_launcher_mode" });
+  const port = parseInt(String(req.body && req.body.port ? req.body.port : ""), 10);
+  if (!Number.isFinite(port) || port < 1 || port > 65535) return res.status(400).json({ error: "port_invalid" });
+  const free = await isPortFree(port);
+  if (!free) return res.status(409).json({ error: "port_in_use" });
+
+  const env = {
+    ...process.env,
+    PORT: String(port),
+    LAUNCHER_MODE: "0",
+    AUTO_OPEN_BROWSER: "1"
+  };
+
+  const command = process.execPath;
+  const args = IS_PKG ? [] : [path.join(__dirname, "server.js")];
+  const child = spawn(command, args, { env, detached: true, stdio: "ignore" });
+  child.unref();
+
+  res.json({ ok: true, url: `http://localhost:${port}/` });
+  setTimeout(() => process.exit(0), 700);
+});
+
+app.use((req, res, next) => {
+  if (runtimeMode !== "launcher") return next();
+  const p = req.path || "/";
+  if (p === "/" || p.startsWith("/launcher/") || p === "/health" || p === METRICS_PATH) return next();
+  if (p.startsWith("/admin") || p.startsWith("/v1") || p.startsWith("/chat") || p.startsWith("/embeddings") || p.startsWith("/models")) {
+    return res.status(409).json({ error: "service_not_started" });
+  }
+  return next();
 });
 
 app.use("/admin", express.json({ limit: "1mb" }));
@@ -626,6 +686,56 @@ app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
   return res.status(lastStatus).json({ error: "upstream_failed", provider, model: requestedModel || null });
 });
 
-app.listen(PORT, () => {
-  process.stdout.write(`llm-key-lb listening on http://localhost:${PORT}\n`);
-});
+function openBrowser(url) {
+  if (!AUTO_OPEN_BROWSER) return;
+  try {
+    const platform = process.platform;
+    if (platform === "darwin") spawn("open", [url], { stdio: "ignore", detached: true }).unref();
+    else if (platform === "win32") spawn("cmd", ["/c", "start", "", url], { stdio: "ignore", detached: true }).unref();
+    else spawn("xdg-open", [url], { stdio: "ignore", detached: true }).unref();
+  } catch {
+    return;
+  }
+}
+
+function listenAsync(listenPort) {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(listenPort, () => resolve(server));
+    server.on("error", reject);
+  });
+}
+
+async function startLauncher(reason) {
+  runtimeMode = "launcher";
+  launcherReason = reason || null;
+  const server = await listenAsync(0);
+  const addr = server.address();
+  runtimeListenPort = addr && typeof addr === "object" ? addr.port : null;
+  const url = runtimeListenPort ? `http://localhost:${runtimeListenPort}/` : "http://localhost/";
+  process.stdout.write(`launcher listening on ${url}\n`);
+  openBrowser(url);
+}
+
+async function startMain() {
+  runtimeMode = "main";
+  launcherReason = null;
+  try {
+    const server = await listenAsync(PORT);
+    runtimeListenPort = PORT;
+    const url = `http://localhost:${PORT}/`;
+    process.stdout.write(`llm-key-lb listening on ${url}\n`);
+    openBrowser(url);
+    return server;
+  } catch (err) {
+    if (err && err.code === "EADDRINUSE") {
+      process.stderr.write(`port ${PORT} is already in use, opening launcher UI\n`);
+      await startLauncher("EADDRINUSE");
+      return null;
+    }
+    process.stderr.write(String(err && err.stack ? err.stack : err) + "\n");
+    process.exit(1);
+  }
+}
+
+if (LAUNCHER_MODE) startLauncher(null).catch((e) => (process.stderr.write(String(e && e.stack ? e.stack : e) + "\n"), process.exit(1)));
+else startMain();
