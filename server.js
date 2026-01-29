@@ -398,7 +398,7 @@ app.post("/launcher/start", express.json({ limit: "20kb" }), async (req, res) =>
     ...process.env,
     PORT: String(port),
     LAUNCHER_MODE: "0",
-    AUTO_OPEN_BROWSER: "1"
+    AUTO_OPEN_BROWSER: "0"
   };
 
   const command = process.execPath;
