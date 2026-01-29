@@ -197,6 +197,7 @@ button:disabled {
   border-radius: 8px;
   padding: 10px;
   background: #0b1020;
+  min-height: 280px;
 }
 
 .chart svg {

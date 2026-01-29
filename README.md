@@ -4,6 +4,8 @@
 
 `llm-apikey-lb` is a local HTTP gateway that manages a pool of API keys and exposes a single OpenAI-compatible `/v1` endpoint. It round-robins keys and automatically cools down / fails over on rate limits and upstream errors.
 
+![UI Screenshot](assets/ui.png)
+
 ## Features
 
 - Local management UI: add/edit/enable/disable/delete keys
@@ -108,7 +110,7 @@ This project supports building single-file executables via `pkg`.
 macOS:
 
 ```bash
-npm run build:bin:mac
+npm run build:app:mac
 ```
 
 Linux:
@@ -126,9 +128,11 @@ npm run build:bin:win
 Outputs go to `dist/`. The binary serves the embedded UI assets and uses your current working directory for `DATA_FILE` (default `./data/state.json`).
 Binary names:
 
-- macOS: `llm-apikey-lb-macos-x64` / `llm-apikey-lb-macos-arm64`
+- macOS: `llm-apikey-lb-macos.app.zip`
 - Linux: `llm-apikey-lb-linux-x64`
 - Windows: `llm-apikey-lb-windows-x64.exe`
+
+On macOS, the `.app` stores its state at `~/Library/Application Support/llm-apikey-lb/state.json` by default.
 
 ### macOS Gatekeeper / “Apple cannot verify”
 

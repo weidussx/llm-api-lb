@@ -4,6 +4,8 @@
 
 `llm-apikey-lb` 是一个本地运行的 HTTP 网关，用来管理多个上游 API Key，并对外提供一个统一的 OpenAI 兼容 `/v1` 入口。它会对可用 Key 做轮询，并在遇到限流/错误时自动冷却与切换。
 
+![界面截图](assets/ui.png)
+
 ## 功能
 
 - 本地管理界面：新增/编辑/启用/禁用/删除 Key
@@ -108,7 +110,7 @@ scrape_configs:
 macOS：
 
 ```bash
-npm run build:bin:mac
+npm run build:app:mac
 ```
 
 Linux：
@@ -123,7 +125,8 @@ Windows：
 npm run build:bin:win
 ```
 
-生成物在 `dist/`。可执行文件会直接提供内置的管理界面静态资源；状态文件默认写到当前工作目录的 `./data/state.json`（可用 `DATA_FILE` 改）。
+生成物在 `dist/`。状态文件默认写到当前工作目录的 `./data/state.json`（可用 `DATA_FILE` 改）。
+macOS 的 `.app` 默认把状态写到：`~/Library/Application Support/llm-apikey-lb/state.json`。
 macOS 提示：如果运行时系统拦截，可到“系统设置 → 隐私与安全性 → 仍要打开”。
 
 ## 安全建议

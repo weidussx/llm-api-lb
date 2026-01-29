@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const crypto = require("crypto");
+const fsSync = require("fs");
 const fs = require("fs/promises");
 const net = require("net");
 const path = require("path");
@@ -18,6 +19,26 @@ const METRICS_PATH = process.env.METRICS_PATH || "/metrics";
 const IS_PKG = Boolean(process.pkg);
 const LAUNCHER_MODE = process.env.LAUNCHER_MODE ? process.env.LAUNCHER_MODE === "1" : IS_PKG;
 const AUTO_OPEN_BROWSER = process.env.AUTO_OPEN_BROWSER ? process.env.AUTO_OPEN_BROWSER === "1" : IS_PKG;
+function resolvePublicDir() {
+  const candidates = [
+    path.join(__dirname, "public"),
+    IS_PKG && process.pkg && process.pkg.entrypoint ? path.join(path.dirname(process.pkg.entrypoint), "public") : null,
+    path.join(process.cwd(), "public"),
+    path.join(path.dirname(process.execPath), "public")
+  ].filter(Boolean);
+
+  for (const dir of candidates) {
+    try {
+      if (fsSync.existsSync(path.join(dir, "index.html"))) return dir;
+    } catch {
+      continue;
+    }
+  }
+
+  return path.join(__dirname, "public");
+}
+
+const PUBLIC_DIR = resolvePublicDir();
 
 function nowIso() {
   return new Date().toISOString();
@@ -678,7 +699,34 @@ app.delete("/admin/keys/:id", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
-app.use(express.static(path.join(__dirname, "public")));
+function sendPublicFile(res, fileName) {
+  const filePath = path.join(PUBLIC_DIR, fileName);
+  const ext = path.extname(fileName).toLowerCase();
+  const contentType =
+    ext === ".html"
+      ? "text/html; charset=utf-8"
+      : ext === ".js"
+        ? "application/javascript; charset=utf-8"
+        : ext === ".css"
+          ? "text/css; charset=utf-8"
+          : "application/octet-stream";
+  const data = fsSync.readFileSync(filePath);
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", "no-store");
+  res.end(data);
+}
+
+app.get(["/", "/index.html", "/app.js", "/styles.css"], (req, res, next) => {
+  if (runtimeMode === "launcher" && req.path === "/") return next();
+  const name = req.path === "/" ? "index.html" : req.path.slice(1);
+  try {
+    sendPublicFile(res, name);
+  } catch {
+    return next();
+  }
+});
+
+app.use(express.static(PUBLIC_DIR));
 
 app.use("/v1", express.raw({ type: "*/*", limit: "20mb" }));
 app.use("/", express.raw({ type: "*/*", limit: "20mb" }));

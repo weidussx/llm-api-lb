@@ -2,6 +2,7 @@ const fs = require("fs/promises");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const zlib = require("zlib");
 
 async function pathExists(p) {
   try {
@@ -29,6 +30,52 @@ function run(cmd, args, opts = {}) {
   return res;
 }
 
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i += 1) {
+    c ^= buf[i];
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const typeBuf = Buffer.from(type, "ascii");
+  const lenBuf = Buffer.alloc(4);
+  lenBuf.writeUInt32BE(data.length, 0);
+  const crcBuf = Buffer.alloc(4);
+  crcBuf.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
+  return Buffer.concat([lenBuf, typeBuf, data, crcBuf]);
+}
+
+function solidPng(size, rgba) {
+  const w = size;
+  const h = size;
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr.writeUInt8(8, 8);
+  ihdr.writeUInt8(6, 9);
+  ihdr.writeUInt8(0, 10);
+  ihdr.writeUInt8(0, 11);
+  ihdr.writeUInt8(0, 12);
+
+  const row = Buffer.alloc(1 + w * 4);
+  row[0] = 0;
+  for (let x = 0; x < w; x += 1) {
+    row[1 + x * 4 + 0] = rgba[0];
+    row[1 + x * 4 + 1] = rgba[1];
+    row[1 + x * 4 + 2] = rgba[2];
+    row[1 + x * 4 + 3] = rgba[3];
+  }
+  const raw = Buffer.alloc(row.length * h);
+  for (let y = 0; y < h; y += 1) row.copy(raw, y * row.length);
+  const idat = zlib.deflateSync(raw, { level: 9 });
+
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  return Buffer.concat([sig, pngChunk("IHDR", ihdr), pngChunk("IDAT", idat), pngChunk("IEND", Buffer.alloc(0))]);
+}
+
 async function main() {
   const root = path.resolve(__dirname, "..");
   const distDir = path.join(root, "dist");
@@ -46,6 +93,7 @@ async function main() {
   const macosDir = path.join(contents, "MacOS");
   const resourcesDir = path.join(contents, "Resources");
 
+  await rmIfExists(path.join(distDir, ".build-macos-app"));
   await rmIfExists(appPath);
   await fs.mkdir(macosDir, { recursive: true });
   await fs.mkdir(resourcesDir, { recursive: true });
@@ -72,6 +120,8 @@ async function main() {
     <string>${version}</string>
     <key>CFBundleVersion</key>
     <string>${version}</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>11.0</string>
     <key>NSAppTransportSecurity</key>
@@ -251,10 +301,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     let proc = Process()
     proc.executableURL = binURL
+    let fm = FileManager.default
+    let appSupportBase = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+    let appSupportDir = appSupportBase.appendingPathComponent("llm-apikey-lb", isDirectory: true)
+    try? fm.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
     var env = ProcessInfo.processInfo.environment
     env["PORT"] = String(port)
     env["LAUNCHER_MODE"] = "0"
     env["AUTO_OPEN_BROWSER"] = "0"
+    env["DATA_FILE"] = appSupportDir.appendingPathComponent("state.json").path
+    proc.currentDirectoryURL = appSupportDir
     proc.environment = env
     proc.standardOutput = FileHandle.nullDevice
     proc.standardError = FileHandle.nullDevice
@@ -314,6 +370,27 @@ app.run()
 
   await fs.writeFile(swiftPath, swift, "utf8");
   try {
+    const iconPng = path.join(buildDir, "icon-1024.png");
+    await fs.writeFile(iconPng, solidPng(1024, [37, 99, 235, 255]));
+    const iconsetDir = path.join(buildDir, "AppIcon.iconset");
+    await fs.mkdir(iconsetDir, { recursive: true });
+    const sizes = [
+      [16, "icon_16x16.png"],
+      [32, "icon_16x16@2x.png"],
+      [32, "icon_32x32.png"],
+      [64, "icon_32x32@2x.png"],
+      [128, "icon_128x128.png"],
+      [256, "icon_128x128@2x.png"],
+      [256, "icon_256x256.png"],
+      [512, "icon_256x256@2x.png"],
+      [512, "icon_512x512.png"],
+      [1024, "icon_512x512@2x.png"]
+    ];
+    for (const [px, name] of sizes) {
+      run("sips", ["-z", String(px), String(px), iconPng, "--out", path.join(iconsetDir, name)]);
+    }
+    run("iconutil", ["-c", "icns", iconsetDir, "-o", path.join(resourcesDir, "AppIcon.icns")]);
+
     const armOut = path.join(buildDir, "llm-apikey-lb-arm64");
     const x64Out = path.join(buildDir, "llm-apikey-lb-x86_64");
     run("xcrun", [
