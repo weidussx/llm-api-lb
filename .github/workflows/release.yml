@@ -30,45 +30,6 @@ jobs:
         if: runner.os == 'macOS'
         run: npm run build:bin:mac
 
-      - name: Import macOS codesign cert
-        if: runner.os == 'macOS' && secrets.MACOS_CERT_P12_BASE64 != '' && secrets.MACOS_CERT_PASSWORD != ''
-        uses: apple-actions/import-codesign-certs@v3
-        with:
-          p12-file-base64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
-          p12-password: ${{ secrets.MACOS_CERT_PASSWORD }}
-
-      - name: Codesign + notarize (macOS)
-        if: runner.os == 'macOS' && secrets.MACOS_CERT_P12_BASE64 != '' && secrets.MACOS_CERT_PASSWORD != '' && secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_PASSWORD != ''
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: |
-          set -euo pipefail
-
-          echo "Available identities:"
-          security find-identity -v -p codesigning || true
-
-          IDENTITY="$(security find-identity -v -p codesigning | grep 'Developer ID Application' | head -n 1 | awk '{print $2}')"
-          if [[ -z "${IDENTITY}" ]]; then
-            echo "No Developer ID Application identity found" >&2
-            exit 1
-          fi
-
-          for f in dist/llm-apikey-lb-macos-*; do
-            echo "Signing ${f}"
-            codesign --force --options runtime --timestamp --sign "${IDENTITY}" "${f}"
-            codesign --verify --deep --strict --verbose=2 "${f}"
-          done
-
-          for f in dist/llm-apikey-lb-macos-*; do
-            zip="${f}.zip"
-            rm -f "${zip}"
-            ditto -c -k --sequesterRsrc --keepParent "${f}" "${zip}"
-            echo "Notarizing ${zip}"
-            xcrun notarytool submit "${zip}" --apple-id "${APPLE_ID}" --team-id "${APPLE_TEAM_ID}" --password "${APPLE_APP_PASSWORD}" --wait
-          done
-
       - name: Build (Linux)
         if: runner.os == 'Linux'
         run: npm run build:bin:linux
@@ -78,19 +39,6 @@ jobs:
         run: npm run build:bin:win
 
       - uses: actions/upload-artifact@v4
-        if: runner.os == 'macOS' && secrets.MACOS_CERT_P12_BASE64 != '' && secrets.MACOS_CERT_PASSWORD != '' && secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_PASSWORD != ''
-        with:
-          name: dist-${{ runner.os }}
-          path: dist/*.zip
-
-      - uses: actions/upload-artifact@v4
-        if: runner.os == 'macOS' && (secrets.MACOS_CERT_P12_BASE64 == '' || secrets.MACOS_CERT_PASSWORD == '' || secrets.APPLE_ID == '' || secrets.APPLE_TEAM_ID == '' || secrets.APPLE_APP_PASSWORD == '')
-        with:
-          name: dist-${{ runner.os }}
-          path: dist/llm-apikey-lb-macos-*
-
-      - uses: actions/upload-artifact@v4
-        if: runner.os != 'macOS'
         with:
           name: dist-${{ runner.os }}
           path: dist/*
