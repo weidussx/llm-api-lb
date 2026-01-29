@@ -188,6 +188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
   private var webView: WKWebView!
   private var portField: NSTextField!
   private var startButton: NSButton!
+  private var stopButton: NSButton!
   private var openBrowserButton: NSButton!
   private var statusLabel: NSTextField!
   private var child: Process?
@@ -236,6 +237,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     startButton = NSButton(title: "启动", target: self, action: #selector(onStart))
     startButton.bezelStyle = .rounded
+    startButton.keyEquivalent = "\\r"
+
+    stopButton = NSButton(title: "停止", target: self, action: #selector(onStop))
+    stopButton.bezelStyle = .rounded
+    stopButton.isEnabled = false
 
     openBrowserButton = NSButton(title: "用浏览器打开", target: self, action: #selector(onOpenBrowser))
     openBrowserButton.bezelStyle = .rounded
@@ -248,6 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     topBar.addArrangedSubview(portLabel)
     topBar.addArrangedSubview(portField)
     topBar.addArrangedSubview(startButton)
+    topBar.addArrangedSubview(stopButton)
     topBar.addArrangedSubview(openBrowserButton)
     topBar.addArrangedSubview(statusLabel)
 
@@ -279,6 +286,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
   @objc private func onOpenBrowser() {
     guard let url = currentURL else { return }
     NSWorkspace.shared.open(url)
+  }
+
+  @objc private func onStop() {
+    stopChild()
+    let placeholder = URL(string: "about:blank")!
+    webView.load(URLRequest(url: placeholder))
+    statusLabel.stringValue = "已停止"
   }
 
   @objc private func onStart() {
@@ -334,6 +348,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     currentURL = url
     expectedInstanceId = instanceId
     openBrowserButton.isEnabled = true
+    stopButton.isEnabled = true
     statusLabel.stringValue = "正在启动…"
     startPollingHealth(url)
   }
@@ -344,6 +359,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     currentURL = nil
     expectedInstanceId = nil
     openBrowserButton.isEnabled = false
+    stopButton.isEnabled = false
     if let p = child {
       if p.isRunning { p.terminate() }
       child = nil
