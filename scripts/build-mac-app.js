@@ -371,7 +371,12 @@ app.run()
   await fs.writeFile(swiftPath, swift, "utf8");
   try {
     const iconPng = path.join(buildDir, "icon-1024.png");
-    await fs.writeFile(iconPng, solidPng(1024, [37, 99, 235, 255]));
+    const iconSrc = path.join(root, "assets", "icon.png");
+    if (await pathExists(iconSrc)) {
+      await fs.copyFile(iconSrc, iconPng);
+    } else {
+      await fs.writeFile(iconPng, solidPng(1024, [37, 99, 235, 255]));
+    }
     const iconsetDir = path.join(buildDir, "AppIcon.iconset");
     await fs.mkdir(iconsetDir, { recursive: true });
     const sizes = [
