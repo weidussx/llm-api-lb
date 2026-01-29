@@ -127,7 +127,10 @@ npm run build:bin:win
 
 生成物在 `dist/`。状态文件默认写到当前工作目录的 `./data/state.json`（可用 `DATA_FILE` 改）。
 macOS 的 `.app` 默认把状态写到：`~/Library/Application Support/llm-apikey-lb/state.json`。
-macOS 提示：如果运行时系统拦截，可到“系统设置 → 隐私与安全性 → 仍要打开”。
+macOS 安装与首次打开：
+
+- 建议把 `llm-apikey-lb.app` 拖到“应用程序 /Applications”后再打开（不要在 Downloads 里直接打开，也不要进入 `Contents/` 手动运行）。
+- 若提示“无法打开，因为无法验证开发者 / 来自身份不明开发者 / 已阻止”，到“系统设置 → 隐私与安全性”，在底部找到对应提示并点“仍要打开”，再回到应用右键“打开”一次。
 
 ## 安全建议
 

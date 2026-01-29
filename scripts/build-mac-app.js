@@ -183,7 +183,7 @@ func isPortFree(_ port: Int32) -> Bool {
   return bindResult == 0
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, NSWindowDelegate {
   private var window: NSWindow!
   private var webView: WKWebView!
   private var portField: NSTextField!
@@ -191,23 +191,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
   private var stopButton: NSButton!
   private var openBrowserButton: NSButton!
   private var statusLabel: NSTextField!
+  private var statusItem: NSStatusItem!
+  private var menuOpenMain: NSMenuItem!
+  private var menuStart: NSMenuItem!
+  private var menuStop: NSMenuItem!
+  private var menuOpenBrowser: NSMenuItem!
   private var child: Process?
   private var pollingTimer: Timer?
   private var currentURL: URL?
   private var expectedInstanceId: String?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    NSApp.setActivationPolicy(.regular)
+    NSApp.setActivationPolicy(.accessory)
+    setupStatusItem()
     buildUI()
-    NSApp.activate(ignoringOtherApps: true)
+    showMainWindow()
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-    true
+    false
   }
 
   func applicationWillTerminate(_ notification: Notification) {
     stopChild()
+  }
+
+  private func setupStatusItem() {
+    statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    if let button = statusItem.button {
+      button.image = NSApp.applicationIconImage
+      button.image?.size = NSSize(width: 18, height: 18)
+    }
+
+    let menu = NSMenu()
+
+    menuOpenMain = NSMenuItem(title: "打开主界面", action: #selector(onMenuOpenMain), keyEquivalent: "")
+    menuOpenMain.target = self
+    menu.addItem(menuOpenMain)
+
+    menu.addItem(NSMenuItem.separator())
+
+    menuStart = NSMenuItem(title: "启动", action: #selector(onStart), keyEquivalent: "")
+    menuStart.target = self
+    menu.addItem(menuStart)
+
+    menuStop = NSMenuItem(title: "停止", action: #selector(onStop), keyEquivalent: "")
+    menuStop.target = self
+    menuStop.isEnabled = false
+    menu.addItem(menuStop)
+
+    menuOpenBrowser = NSMenuItem(title: "用浏览器打开", action: #selector(onOpenBrowser), keyEquivalent: "")
+    menuOpenBrowser.target = self
+    menuOpenBrowser.isEnabled = false
+    menu.addItem(menuOpenBrowser)
+
+    menu.addItem(NSMenuItem.separator())
+
+    let quitItem = NSMenuItem(title: "退出", action: #selector(onMenuQuit), keyEquivalent: "q")
+    quitItem.target = self
+    menu.addItem(quitItem)
+
+    statusItem.menu = menu
+  }
+
+  private func showMainWindow() {
+    window.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
+  @objc private func onMenuOpenMain() {
+    showMainWindow()
+  }
+
+  @objc private func onMenuQuit() {
+    stopChild()
+    NSApp.terminate(nil)
   }
 
   private func buildUI() {
@@ -215,6 +273,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     window = NSWindow(contentRect: rect, styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
     window.title = "llm-apikey-lb"
     window.center()
+    window.isReleasedWhenClosed = false
+    window.delegate = self
 
     let content = NSView()
     content.translatesAutoresizingMaskIntoConstraints = false
@@ -279,8 +339,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
     let placeholder = URL(string: "about:blank")!
     webView.load(URLRequest(url: placeholder))
+  }
 
-    window.makeKeyAndOrderFront(nil)
+  func windowShouldClose(_ sender: NSWindow) -> Bool {
+    sender.orderOut(nil)
+    return false
   }
 
   @objc private func onOpenBrowser() {
@@ -349,6 +412,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     expectedInstanceId = instanceId
     openBrowserButton.isEnabled = true
     stopButton.isEnabled = true
+    menuOpenBrowser.isEnabled = true
+    menuStop.isEnabled = true
+    menuStart.isEnabled = false
     statusLabel.stringValue = "正在启动…"
     startPollingHealth(url)
   }
@@ -360,6 +426,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     expectedInstanceId = nil
     openBrowserButton.isEnabled = false
     stopButton.isEnabled = false
+    if menuOpenBrowser != nil { menuOpenBrowser.isEnabled = false }
+    if menuStop != nil { menuStop.isEnabled = false }
+    if menuStart != nil { menuStart.isEnabled = true }
     if let p = child {
       if p.isRunning { p.terminate() }
       child = nil
