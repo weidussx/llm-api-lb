@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>llm-key-lb</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <div class="title">
+          <h1 data-i18n="app.title">llm-key-lb</h1>
+          <p class="muted" data-i18n="app.subtitle">本地 APIKey 管理 + 轮询代理</p>
+        </div>
+        <div class="actions">
+          <button id="btnLangToggle" class="secondary">EN</button>
+          <button id="btnSetToken" class="secondary" data-i18n="btn.setToken">设置管理令牌</button>
+          <button id="btnRefresh" class="secondary" data-i18n="btn.refresh">刷新</button>
+        </div>
+      </header>
+
+      <section class="card">
+        <h2 data-i18n="section.addKey">新增 APIKey</h2>
+        <form id="formAdd" class="grid">
+          <label>
+            <span data-i18n="form.provider">厂商</span>
+            <select id="provider"></select>
+          </label>
+          <label>
+            <span data-i18n="form.name">名称</span>
+            <input id="name" data-i18n-placeholder="ph.name" placeholder="可选，便于区分" />
+          </label>
+          <label class="span2">
+            <span data-i18n="form.baseUrl">Base URL</span>
+            <input id="baseUrl" data-i18n-placeholder="ph.baseUrl" placeholder="例如 https://api.openai.com/v1" />
+          </label>
+          <label class="span2">
+            <span data-i18n="form.model">Model（留空表示全模型）</span>
+            <select id="modelSelect"></select>
+          </label>
+          <label class="span2" id="modelCustomWrap" style="display: none">
+            <span data-i18n="form.modelCustom">自定义 Model</span>
+            <input id="modelCustom" data-i18n-placeholder="ph.modelCustom" placeholder="例如 gpt-4o-mini" />
+          </label>
+          <label class="span2">
+            <span data-i18n="form.apiKey">API Key</span>
+            <input id="apiKey" data-i18n-placeholder="ph.apiKey" placeholder="必填" />
+          </label>
+          <label class="inline">
+            <input type="checkbox" id="enabled" checked />
+            <span data-i18n="form.enabled">启用</span>
+          </label>
+          <div class="span2 right">
+            <button type="submit" data-i18n="btn.add">添加</button>
+          </div>
+        </form>
+        <div id="addHint" class="hint"></div>
+      </section>
+
+      <section class="card">
+        <h2 data-i18n="section.keys">已管理的 Keys</h2>
+        <div id="keys"></div>
+      </section>
+
+      <section class="card">
+        <h2 data-i18n="section.usage">使用方式</h2>
+        <div class="usage">
+          <p class="muted" data-i18n="usage.desc">把你业务里 OpenAI SDK 的 baseURL 指向本服务，并保持路径是 /v1。</p>
+          <pre><code id="usageText"></code></pre>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 data-i18n="section.monitor">监控</h2>
+        <div class="muted" data-i18n="monitor.desc">展示本进程内的请求统计；同时支持 Prometheus 抓取 /metrics。</div>
+        <div class="statsToolbar">
+          <div class="muted" id="monitorSelectedHint"></div>
+          <div class="toggleGroup">
+            <label class="toggle">
+              <input type="checkbox" id="toggleBars" checked />
+              <span data-i18n="monitor.toggle.bars">柱状图</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="toggleLine" checked />
+              <span data-i18n="monitor.toggle.line">折线(耗时)</span>
+            </label>
+          </div>
+        </div>
+        <div id="stats" class="stats"></div>
+        <div id="chart" class="chart"></div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

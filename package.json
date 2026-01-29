@@ -1,0 +1,43 @@
+{
+  "name": "llm-apikey-lb",
+  "version": "0.1.0",
+  "description": "Local LLM API-key load balancer with round-robin and a small management UI",
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "server.js",
+  "bin": {
+    "llm-apikey-lb": "cli.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/weidussx/llm-apikey-lb.git"
+  },
+  "bugs": {
+    "url": "https://github.com/weidussx/llm-apikey-lb/issues"
+  },
+  "homepage": "https://github.com/weidussx/llm-apikey-lb#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "build:bin:mac": "cross-env PKG_CACHE_PATH=.pkg-cache pkg -t node18-macos-x64,node18-macos-arm64 -o dist/llm-apikey-lb server.js",
+    "build:bin:linux": "cross-env PKG_CACHE_PATH=.pkg-cache pkg -t node18-linux-x64 -o dist/llm-apikey-lb server.js",
+    "build:bin:win": "cross-env PKG_CACHE_PATH=.pkg-cache pkg -t node18-win-x64 -o dist/llm-apikey-lb.exe server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "prom-client": "^15.1.3"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "assets": [
+      "public/**/*",
+      ".env.example"
+    ]
+  }
+}
