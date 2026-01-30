@@ -101,8 +101,8 @@ async function main() {
     await rmIfExists(path.join(resourcesDir, "public"));
     await fs.cp(path.join(root, "public"), path.join(resourcesDir, "public"), { recursive: true });
   }
-  if (await pathExists(path.join(root, "assets", "task.png"))) {
-    await fs.copyFile(path.join(root, "assets", "task.png"), path.join(resourcesDir, "task.png"));
+  if (await pathExists(path.join(root, "assets", "menubar_llm_lb_icon_32.png"))) {
+    await fs.copyFile(path.join(root, "assets", "menubar_llm_lb_icon_32.png"), path.join(resourcesDir, "menubar_icon.png"));
   }
 
   const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
@@ -255,7 +255,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private func setupStatusItem() {
     statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     if let button = statusItem.button {
-      if let url = Bundle.main.url(forResource: "task", withExtension: "png"), let img = NSImage(contentsOf: url) {
+      if let url = Bundle.main.url(forResource: "menubar_icon", withExtension: "png"), let img = NSImage(contentsOf: url) {
         img.isTemplate = true
         img.size = NSSize(width: 18, height: 18)
         button.image = img
