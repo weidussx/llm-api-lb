@@ -549,7 +549,7 @@ app.run()
   await fs.chmod(execPath, 0o755);
 
   if (process.platform === "darwin") {
-    const zipPath = path.join(distDir, "llm-apikey-lb-macos.app.zip");
+    const zipPath = path.join(distDir, "llm-api-lb-macos.app.zip");
     await rmIfExists(zipPath);
     run("ditto", ["-c", "-k", "--sequesterRsrc", "--keepParent", appPath, zipPath]);
   }
