@@ -101,9 +101,9 @@ async function main() {
     await rmIfExists(path.join(resourcesDir, "public"));
     await fs.cp(path.join(root, "public"), path.join(resourcesDir, "public"), { recursive: true });
   }
-  if (await pathExists(path.join(root, "assets", "menubar_llm_lb_icon_32.png"))) {
-    await fs.copyFile(path.join(root, "assets", "menubar_llm_lb_icon_32.png"), path.join(resourcesDir, "menubar_icon.png"));
-  }
+  if (await pathExists(path.join(root, "assets", "menubar_llm_lb_icon_128.png"))) {
+     await fs.copyFile(path.join(root, "assets", "menubar_llm_lb_icon_128.png"), path.join(resourcesDir, "menubar_icon.png"));
+   }
 
   const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -205,7 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private var expectedInstanceId: String?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    NSApp.setActivationPolicy(.accessory)
+    NSApp.setActivationPolicy(.regular)
     setupMainMenu()
     setupStatusItem()
     buildUI()
@@ -218,7 +218,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     let appMenuItem = NSMenuItem()
     mainMenu.addItem(appMenuItem)
     let appMenu = NSMenu()
-    appMenu.addItem(NSMenuItem(title: "About llm-api-lb", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
+    appMenu.addItem(NSMenuItem(title: "About llm-api-lb", action: #selector(onMenuAbout), keyEquivalent: ""))
+    appMenu.addItem(NSMenuItem.separator())
+    let hideItem = NSMenuItem(title: "Hide llm-api-lb", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+    appMenu.addItem(hideItem)
+    let hideOthersItem = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+    hideOthersItem.keyEquivalentModifierMask = [.command, .option]
+    appMenu.addItem(hideOthersItem)
+    appMenu.addItem(NSMenuItem(title: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: ""))
     appMenu.addItem(NSMenuItem.separator())
     let quitItem = NSMenuItem(title: "Quit llm-api-lb", action: #selector(onMenuQuit), keyEquivalent: "q")
     quitItem.target = self
@@ -257,7 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     if let button = statusItem.button {
       if let url = Bundle.main.url(forResource: "menubar_icon", withExtension: "png"), let img = NSImage(contentsOf: url) {
         img.isTemplate = true
-        img.size = NSSize(width: 18, height: 18)
+        img.size = NSSize(width: 22, height: 22)
         button.image = img
       } else {
         if let img = NSApp.applicationIconImage {
@@ -306,6 +313,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
   @objc private func onMenuOpenMain() {
     showMainWindow()
+  }
+
+  @objc private func onMenuAbout() {
+    let alert = NSAlert()
+    alert.messageText = "关于 llm-api-lb"
+    alert.informativeText = "版本：v${version}\\n\\nLocal LLM API load balancer with round-robin and a small management UI.\\n\\nGitHub: https://github.com/weidussx/llm-api-lb"
+    alert.addButton(withTitle: "OK")
+    alert.alertStyle = .informational
+    if let w = window, w.isVisible {
+      alert.beginSheetModal(for: w, completionHandler: nil)
+    } else {
+      alert.runModal()
+    }
   }
 
   @objc private func onMenuQuit() {
