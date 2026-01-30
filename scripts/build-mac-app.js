@@ -82,12 +82,12 @@ async function main() {
   const pkgJson = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8"));
   const version = String(pkgJson.version || "0.0.0");
 
-  const binArm64 = path.join(distDir, "llm-apikey-lb-macos-arm64");
-  const binX64 = path.join(distDir, "llm-apikey-lb-macos-x64");
+  const binArm64 = path.join(distDir, "llm-api-lb-macos-arm64");
+  const binX64 = path.join(distDir, "llm-api-lb-macos-x64");
   if (!(await pathExists(binArm64))) fail(`missing binary: ${binArm64}`);
   if (!(await pathExists(binX64))) fail(`missing binary: ${binX64}`);
 
-  const appName = "llm-apikey-lb.app";
+  const appName = "llm-api-lb.app";
   const appPath = path.join(distDir, appName);
   const contents = path.join(appPath, "Contents");
   const macosDir = path.join(contents, "MacOS");
@@ -283,7 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private func buildUI() {
     let rect = NSRect(x: 0, y: 0, width: 1100, height: 740)
     window = NSWindow(contentRect: rect, styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-    window.title = "llm-apikey-lb"
+    window.title = "llm-api-lb"
     window.center()
     window.isReleasedWhenClosed = false
     window.delegate = self
@@ -397,7 +397,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     proc.executableURL = binURL
     let fm = FileManager.default
     let appSupportBase = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-    let appSupportDir = appSupportBase.appendingPathComponent("llm-apikey-lb", isDirectory: true)
+    let appSupportDir = appSupportBase.appendingPathComponent("llm-api-lb", isDirectory: true)
     try? fm.createDirectory(at: appSupportDir, withIntermediateDirectories: true)
     var env = ProcessInfo.processInfo.environment
     let instanceId = UUID().uuidString
@@ -405,7 +405,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     env["LAUNCHER_MODE"] = "0"
     env["AUTO_OPEN_BROWSER"] = "0"
     env["DATA_FILE"] = appSupportDir.appendingPathComponent("state.json").path
-    env["LLM_KEY_LB_INSTANCE_ID"] = instanceId
+    env["LLM_API_LB_INSTANCE_ID"] = instanceId
     proc.currentDirectoryURL = appSupportDir
     proc.environment = env
     proc.standardOutput = FileHandle.nullDevice

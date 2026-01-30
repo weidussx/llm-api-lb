@@ -42,19 +42,19 @@ jobs:
         if: runner.os == 'macOS'
         with:
           name: dist-${{ runner.os }}
-          path: dist/llm-apikey-lb-macos.app.zip
+          path: dist/llm-api-lb-macos.app.zip
 
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
         with:
           name: dist-${{ runner.os }}
-          path: dist/llm-apikey-lb-linux-x64
+          path: dist/llm-api-lb-linux-x64
 
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Windows'
         with:
           name: dist-${{ runner.os }}
-          path: dist/llm-apikey-lb-windows-x64.exe
+          path: dist/llm-api-lb-windows-x64.exe
 
   github-release:
     needs: build
@@ -70,6 +70,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/**/llm-apikey-lb-macos.app.zip
-            artifacts/**/llm-apikey-lb-linux-x64
-            artifacts/**/llm-apikey-lb-windows-x64.exe
+            artifacts/**/llm-api-lb-macos.app.zip
+            artifacts/**/llm-api-lb-linux-x64
+            artifacts/**/llm-api-lb-windows-x64.exe

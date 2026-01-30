@@ -1,12 +1,12 @@
 {
-  "name": "llm-apikey-lb",
-  "version": "0.1.13",
-  "description": "Local LLM API-key load balancer with round-robin and a small management UI",
+  "name": "llm-api-lb",
+  "version": "0.1.14",
+  "description": "Local LLM API load balancer with round-robin and a small management UI",
   "license": "MIT",
   "type": "commonjs",
   "main": "server.js",
   "bin": {
-    "llm-apikey-lb": "cli.js"
+    "llm-api-lb": "cli.js"
   },
   "repository": {
     "type": "git",

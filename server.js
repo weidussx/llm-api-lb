@@ -150,14 +150,14 @@ const metricsRegistry = new promClient.Registry();
 promClient.collectDefaultMetrics({ register: metricsRegistry });
 
 const metricRequestsTotal = new promClient.Counter({
-  name: "llm_key_lb_requests_total",
+  name: "llm_api_lb_requests_total",
   help: "Total upstream attempts made by the load balancer",
   labelNames: ["provider", "key_id", "key_name", "model", "path", "method", "status"],
   registers: [metricsRegistry]
 });
 
 const metricRequestDuration = new promClient.Histogram({
-  name: "llm_key_lb_request_duration_seconds",
+  name: "llm_api_lb_request_duration_seconds",
   help: "Upstream attempt duration in seconds",
   labelNames: ["provider", "key_id", "key_name", "model", "path", "method"],
   buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 40],
@@ -165,8 +165,15 @@ const metricRequestDuration = new promClient.Histogram({
 });
 
 const metricInFlight = new promClient.Gauge({
-  name: "llm_key_lb_in_flight",
+  name: "llm_api_lb_in_flight",
   help: "Number of upstream attempts currently in flight",
+  labelNames: ["provider", "key_id", "key_name"],
+  registers: [metricsRegistry]
+});
+
+const metricKeyCooldown = new promClient.Gauge({
+  name: "llm_api_lb_key_cooldown",
+  help: "Key cooldown status (1 = cooling down, 0 = active)",
   labelNames: ["provider", "key_id", "key_name"],
   registers: [metricsRegistry]
 });
@@ -393,7 +400,11 @@ let runtimeListenPort = null;
 let launcherReason = null;
 
 app.get("/health", (req, res) => {
-  res.json({ ok: true, instanceId: INSTANCE_ID, mode: runtimeMode, port: runtimeListenPort });
+  res.json({
+    status: "ok",
+    uptime: process.uptime(),
+    instanceId: process.env.LLM_API_LB_INSTANCE_ID || "unknown"
+  });
 });
 
 app.get(METRICS_PATH, async (req, res) => {
@@ -589,6 +600,13 @@ app.get("/admin/stats", requireAdmin, async (req, res) => {
   }
 
   const items = Object.values(byId).sort((a, b) => (b.total || 0) - (a.total || 0));
+
+  // Sync cooldown metrics
+  items.forEach((k) => {
+    const isCooling = k.cooldownUntil && k.cooldownUntil > Date.now() ? 1 : 0;
+    metricKeyCooldown.labels(k.provider, k.id, k.name).set(isCooling);
+  });
+
   res.json({ items });
 });
 
@@ -853,7 +871,7 @@ async function startMain() {
     const server = await listenAsync(PORT);
     runtimeListenPort = PORT;
     const url = `http://localhost:${PORT}/`;
-    process.stdout.write(`llm-key-lb listening on ${url}\n`);
+    process.stdout.write(`llm-api-lb listening on ${url}\n`);
     openBrowser(url);
     return server;
   } catch (err) {

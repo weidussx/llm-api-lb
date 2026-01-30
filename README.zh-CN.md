@@ -1,8 +1,8 @@
-# llm-apikey-lb
+# llm-api-lb
 
 [English](README.md)
 
-`llm-apikey-lb` 是一个本地运行的 HTTP 网关，用来管理多个上游 API Key，并对外提供一个统一的 OpenAI 兼容 `/v1` 入口。它会对可用 Key 做轮询，并在遇到限流/错误时自动冷却与切换。
+`llm-api-lb` 是一个本地运行的 HTTP 网关，用来管理多个上游 API Key，并对外提供一个统一的 OpenAI 兼容 `/v1` 入口。它会对可用 Key 做轮询，并在遇到限流/错误时自动冷却与切换。
 
 ![界面截图](assets/ui.png)
 
@@ -98,9 +98,23 @@ curl -sS http://localhost:8787/metrics | grep '^llm_key_lb_'
 
 ```yaml
 scrape_configs:
-  - job_name: "llm-apikey-lb"
+  - job_name: "llm-api-lb"
     static_configs:
       - targets: ["localhost:8787"]
+```
+
+### 关键指标与 Grafana 查询
+
+| 指标名称 | 类型 | 说明 | Grafana PromQL 示例 |
+| :--- | :--- | :--- | :--- |
+| `llm_api_lb_requests_total` | Counter | 请求总数（含状态码、KeyID 标签） | `sum by (key_name) (rate(llm_api_lb_requests_total[1m]))` |
+| `llm_api_lb_key_cooldown` | Gauge | 冷却状态（1=冷却中, 0=正常） | `llm_api_lb_key_cooldown` (State timeline) |
+| `llm_api_lb_request_duration_seconds` | Histogram | 请求耗时分布 | `histogram_quantile(0.95, sum by (le) (rate(llm_api_lb_request_duration_seconds_bucket[5m])))` |
+| `llm_api_lb_in_flight` | Gauge | 当前正在处理的请求数 | `llm_api_lb_in_flight` |
+
+查看错误率最高的 Key：
+```promql
+topk(5, sum by (key_name) (rate(llm_api_lb_requests_total{status!~"2.."}[5m])) / sum by (key_name) (rate(llm_api_lb_requests_total[5m])))
 ```
 
 ## 构建可执行文件（macOS / Windows / Linux）
@@ -126,10 +140,10 @@ npm run build:bin:win
 ```
 
 生成物在 `dist/`。状态文件默认写到当前工作目录的 `./data/state.json`（可用 `DATA_FILE` 改）。
-macOS 的 `.app` 默认把状态写到：`~/Library/Application Support/llm-apikey-lb/state.json`。
+macOS 的 `.app` 默认把状态写到：`~/Library/Application Support/llm-api-lb/state.json`。
 macOS 安装与首次打开：
 
-- 建议把 `llm-apikey-lb.app` 拖到“应用程序 /Applications”后再打开（不要在 Downloads 里直接打开，也不要进入 `Contents/` 手动运行）。
+- 建议把 `llm-api-lb.app` 拖到“应用程序 /Applications”后再打开（不要在 Downloads 里直接打开，也不要进入 `Contents/` 手动运行）。
 - 若提示“无法打开，因为无法验证开发者 / 来自身份不明开发者 / 已阻止”，到“系统设置 → 隐私与安全性”，在底部找到对应提示并点“仍要打开”，再回到应用右键“打开”一次。
 
 macOS 菜单栏（常驻模式）：

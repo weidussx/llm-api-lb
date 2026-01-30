@@ -540,14 +540,26 @@ function renderChart(timeseries, { showBars, showLine }) {
       let stack = 0;
       series.forEach((s) => {
         const p = s.points[idx];
-        const c = p ? p.count || 0 : 0;
-        if (!c) return;
-        const x = padding.left + idx * barW + 1;
-        const h = (c / maxCount) * plotH;
-        const y = padding.top + plotH - h - stack;
+        const success = p ? p.success || 0 : 0;
+        const failure = p ? p.failure || 0 : 0;
+        if (!success && !failure) return;
+
         const color = colorForKeyId(s.id);
-        svg.appendChild(svgEl("rect", { x, y, width: Math.max(1, barW - 2), height: h, fill: color, opacity: 0.85 }));
-        stack += h;
+        const w = Math.max(1, barW - 2);
+
+        if (success > 0) {
+          const h = (success / maxCount) * plotH;
+          const y = padding.top + plotH - h - stack;
+          svg.appendChild(svgEl("rect", { x: padding.left + idx * barW + 1, y, width: w, height: h, fill: color, opacity: 0.3 }));
+          stack += h;
+        }
+
+        if (failure > 0) {
+          const h = (failure / maxCount) * plotH;
+          const y = padding.top + plotH - h - stack;
+          svg.appendChild(svgEl("rect", { x: padding.left + idx * barW + 1, y, width: w, height: h, fill: color, opacity: 1.0 }));
+          stack += h;
+        }
       });
     }
   }
