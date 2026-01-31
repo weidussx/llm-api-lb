@@ -69,8 +69,19 @@ const I18N = {
     "btn.disable": "禁用",
     "btn.delete": "删除",
     "btn.deleteConfirm": "确认删除",
+    "btn.cancel": "取消",
+    "btn.save": "保存",
 
     "help.endpoints": "- 管理界面：http://localhost:8787/\n- 健康检查：http://localhost:8787/health\n- OpenAI 兼容入口：http://localhost:8787/v1\n- Prometheus 指标：http://localhost:8787/metrics",
+    "help.model": "- 建议留空：让其他 app 在请求里自行指定 model（更灵活）。\n- 只有需要限制该 Key 只能用于某些模型时，才在这里设置 Model。",
+    "modal.edit.title": "编辑 Key",
+    "modal.token.title": "设置管理令牌",
+    "modal.field.name": "名称",
+    "modal.field.baseUrl": "Base URL",
+    "modal.field.models": "Models(逗号分隔,留空=全模型)",
+    "modal.field.apiKey": "API Key",
+    "modal.field.adminToken": "ADMIN_TOKEN",
+    "modal.ph.apiKeyKeep": "留空=不改",
 
     "section.launcher": "启动",
     "launcher.desc": "设置端口并启动服务（默认 8787）。",
@@ -156,6 +167,8 @@ const I18N = {
 
     "msg.addOk": "添加成功",
     "msg.addFail": "添加失败：{message}",
+    "msg.editOk": "更新成功",
+    "msg.editFail": "更新失败：{message}",
     "msg.deleteOk": "删除成功",
     "msg.deleteConfirm": "再次点击“确认删除”以删除 {name}",
     "msg.deleteFail": "删除失败：{message}",
@@ -177,8 +190,19 @@ const I18N = {
     "btn.disable": "Disable",
     "btn.delete": "Delete",
     "btn.deleteConfirm": "Confirm delete",
+    "btn.cancel": "Cancel",
+    "btn.save": "Save",
 
     "help.endpoints": "- UI: http://localhost:8787/\n- Health: http://localhost:8787/health\n- OpenAI-compatible API: http://localhost:8787/v1\n- Prometheus metrics: http://localhost:8787/metrics",
+    "help.model": "- Keep this empty if you want apps to choose models per request.\n- Set model(s) here only if you want to restrict which models this key can use.",
+    "modal.edit.title": "Edit key",
+    "modal.token.title": "Set admin token",
+    "modal.field.name": "Name",
+    "modal.field.baseUrl": "Base URL",
+    "modal.field.models": "Models (comma-separated, empty = all)",
+    "modal.field.apiKey": "API Key",
+    "modal.field.adminToken": "ADMIN_TOKEN",
+    "modal.ph.apiKeyKeep": "Empty = keep unchanged",
 
     "section.launcher": "Start",
     "launcher.desc": "Choose a port and start the service (default 8787).",
@@ -264,6 +288,8 @@ const I18N = {
 
     "msg.addOk": "Added",
     "msg.addFail": "Add failed: {message}",
+    "msg.editOk": "Updated",
+    "msg.editFail": "Update failed: {message}",
     "msg.deleteOk": "Deleted",
     "msg.deleteConfirm": "Click “Confirm delete” again to delete {name}",
     "msg.deleteFail": "Delete failed: {message}",
@@ -342,6 +368,148 @@ function el(tag, attrs = {}, children = []) {
   });
   children.forEach((c) => n.appendChild(typeof c === "string" ? document.createTextNode(c) : c));
   return n;
+}
+
+function getModalEls() {
+  return {
+    overlay: document.getElementById("modalOverlay"),
+    title: document.getElementById("modalTitle"),
+    body: document.getElementById("modalBody"),
+    hint: document.getElementById("modalHint"),
+    btnOk: document.getElementById("modalOk"),
+    btnCancel: document.getElementById("modalCancel"),
+    btnClose: document.getElementById("modalClose")
+  };
+}
+
+function closeModal() {
+  const m = getModalEls();
+  if (!m.overlay) return;
+  m.overlay.style.display = "none";
+  m.overlay.setAttribute("aria-hidden", "true");
+  if (m.title) m.title.removeAttribute("data-i18n");
+  if (m.body) m.body.innerHTML = "";
+  if (m.hint) {
+    m.hint.textContent = "";
+    m.hint.classList.remove("error");
+  }
+  if (m.btnOk) m.btnOk.disabled = false;
+}
+
+function openModal({ titleKey, bodyNodes, onOk }) {
+  const m = getModalEls();
+  if (!m.overlay || !m.title || !m.body || !m.btnOk || !m.btnCancel || !m.btnClose) return;
+
+  m.title.setAttribute("data-i18n", titleKey);
+  m.btnOk.setAttribute("data-i18n", "btn.save");
+  m.btnCancel.setAttribute("data-i18n", "btn.cancel");
+
+  m.body.innerHTML = "";
+  (bodyNodes || []).forEach((n) => m.body.appendChild(n));
+
+  if (m.hint) {
+    m.hint.textContent = "";
+    m.hint.classList.remove("error");
+  }
+
+  m.overlay.style.display = "";
+  m.overlay.setAttribute("aria-hidden", "false");
+  applyI18n();
+
+  const firstInput = m.body.querySelector("input,textarea,select");
+  if (firstInput && typeof firstInput.focus === "function") firstInput.focus();
+
+  m.overlay.onclick = (e) => {
+    if (e.target === m.overlay) closeModal();
+  };
+  m.btnCancel.onclick = () => closeModal();
+  m.btnClose.onclick = () => closeModal();
+  m.btnOk.onclick = async () => {
+    if (typeof onOk !== "function") {
+      closeModal();
+      return;
+    }
+    m.btnOk.disabled = true;
+    try {
+      await onOk();
+    } finally {
+      m.btnOk.disabled = false;
+    }
+  };
+}
+
+function openEditKeyModal({ key, hint, onDone }) {
+  const inputName = el("input");
+  inputName.value = key && key.name ? String(key.name) : "";
+
+  const inputBaseUrl = el("input");
+  inputBaseUrl.value = key && key.baseUrl ? String(key.baseUrl) : "";
+
+  const inputModels = el("input");
+  inputModels.value = key && Array.isArray(key.models) ? key.models.join(",") : "";
+
+  const inputApiKey = el("input", { type: "password", "data-i18n-placeholder": "modal.ph.apiKeyKeep" });
+
+  openModal({
+    titleKey: "modal.edit.title",
+    bodyNodes: [
+      el("label", {}, [el("span", { "data-i18n": "modal.field.name" }), inputName]),
+      el("label", {}, [el("span", { "data-i18n": "modal.field.baseUrl" }), inputBaseUrl]),
+      el("label", {}, [el("span", { "data-i18n": "modal.field.models" }), inputModels]),
+      el("label", {}, [el("span", { "data-i18n": "modal.field.apiKey" }), inputApiKey])
+    ],
+    onOk: async () => {
+      const m = getModalEls();
+      if (m.hint) {
+        m.hint.textContent = "";
+        m.hint.classList.remove("error");
+      }
+      try {
+        await api(`/admin/keys/${key.id}`, {
+          method: "PUT",
+          headers: headers(),
+          body: JSON.stringify({
+            name: inputName.value,
+            baseUrl: inputBaseUrl.value,
+            models: splitModels(inputModels.value),
+            apiKey: inputApiKey.value
+          })
+        });
+        closeModal();
+        if (hint) {
+          hint.textContent = t("msg.editOk");
+          hint.classList.remove("error");
+        }
+        if (typeof onDone === "function") await onDone();
+      } catch (e) {
+        if (m.hint) {
+          m.hint.textContent = t("msg.editFail", { message: e.message });
+          m.hint.classList.add("error");
+        }
+      }
+    }
+  });
+}
+
+function openAdminTokenModal({ onDone } = {}) {
+  const cur = getAdminToken();
+  const inputToken = el("input");
+  inputToken.value = cur;
+
+  openModal({
+    titleKey: "modal.token.title",
+    bodyNodes: [el("label", {}, [el("span", { "data-i18n": "modal.field.adminToken" }), inputToken])],
+    onOk: async () => {
+      const m = getModalEls();
+      if (m.hint) {
+        m.hint.textContent = "";
+        m.hint.classList.remove("error");
+      }
+      setAdminToken((inputToken.value || "").trim());
+      closeModal();
+      if (typeof onDone === "function") await onDone();
+    }
+  });
 }
 
 function splitModels(raw) {
@@ -724,7 +892,7 @@ function renderKeys(keys, presets) {
     return;
   }
 
-  const table = el("table", { class: "table" });
+  const table = el("table", { class: "table keysTable" });
   table.appendChild(
     el("thead", {}, [
       el("tr", {}, [
@@ -818,21 +986,7 @@ function renderKeys(keys, presets) {
       {
         class: "secondary",
         onclick: async () => {
-          const name = prompt(t("prompt.name"), k.name) ?? k.name;
-          const baseUrl = prompt(t("prompt.baseUrl"), k.baseUrl) ?? k.baseUrl;
-          const models = prompt(t("prompt.models"), (k.models || []).join(",")) ?? (k.models || []).join(",");
-          const apiKey = prompt(t("prompt.apiKey"), "") ?? "";
-          await api(`/admin/keys/${k.id}`, {
-            method: "PUT",
-            headers: headers(),
-            body: JSON.stringify({
-              name,
-              baseUrl,
-              models: splitModels(models),
-              apiKey
-            })
-          });
-          await refreshAll();
+          openEditKeyModal({ key: k, hint, onDone: refreshAll });
         }
       },
       [t("btn.edit")]
@@ -848,7 +1002,9 @@ function renderKeys(keys, presets) {
       el("tr", {}, [
         el("td", {}, [k.name]),
         el("td", {}, [providerLabel]),
-        el("td", {}, [k.baseUrl]),
+        el("td", { class: "colBaseUrl" }, [
+          el("span", { class: "truncate", title: k.baseUrl || "" }, [k.baseUrl || ""])
+        ]),
         el("td", {}, [(k.models || []).join(",") || t("models.all")]),
         el("td", {}, [k.apiKeyMasked || ""]),
         el("td", {}, [statusText]),
@@ -871,6 +1027,12 @@ async function refreshAll() {
     applyPresetToForm(presets, provider);
     const keys = await loadKeys();
     renderKeys(keys, presets);
+    const existingKeyIds = new Set(keys.map((k) => String(k.id)).filter(Boolean));
+    const selected = getMonitorSelectedKeyIds();
+    const filtered = selected.filter((id) => existingKeyIds.has(String(id)));
+    if (filtered.length !== selected.length) {
+      setMonitorSelectedKeyIds(filtered);
+    }
     const stats = await loadStats();
     renderStats(stats);
     await refreshMonitorChart();
@@ -1007,10 +1169,7 @@ async function main() {
   });
 
   document.getElementById("btnSetToken").addEventListener("click", () => {
-    const cur = getAdminToken();
-    const next = prompt(t("prompt.adminToken"), cur) ?? cur;
-    setAdminToken(next.trim());
-    refreshAll();
+    openAdminTokenModal({ onDone: refreshAll });
   });
 
   document.getElementById("btnRefresh").addEventListener("click", refreshAll);

@@ -56,6 +56,40 @@ pre {
   font-size: 16px;
 }
 
+.detailsSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.detailsSummary::-webkit-details-marker {
+  display: none;
+}
+
+.detailsSummary h2 {
+  margin: 0;
+}
+
+.detailsChevron {
+  display: inline-block;
+  transform: rotate(0deg);
+  font-size: 20px;
+  line-height: 1;
+  color: #9ca3af;
+}
+
+.details[open] .detailsChevron {
+  transform: rotate(90deg);
+}
+
+.details[open] .usage {
+  margin-top: 12px;
+}
+
 .grid {
   display: grid;
   gap: 12px;
@@ -68,6 +102,76 @@ pre {
   flex-direction: column;
   gap: 6px;
   font-size: 13px;
+}
+
+.labelRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.helpIcon {
+  padding: 0 10px;
+  height: 28px;
+  line-height: 28px;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 50;
+}
+
+.modalCard {
+  width: min(640px, 100%);
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.modalTitle {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.modalClose {
+  padding: 0 10px;
+  height: 32px;
+  line-height: 32px;
+}
+
+.modalBody {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.modalBody label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.modalActions {
+  margin-top: 10px;
+  gap: 10px;
 }
 
 input,
@@ -195,6 +299,41 @@ button:disabled {
   font-size: 13px;
 }
 
+.keysTable {
+  table-layout: fixed;
+}
+
+.keysTable th:nth-child(1) {
+  width: 90px;
+}
+
+.keysTable th:nth-child(2) {
+  width: 170px;
+}
+
+.keysTable th:nth-child(4) {
+  width: 70px;
+}
+
+.keysTable th:nth-child(5) {
+  width: 140px;
+}
+
+.keysTable th:nth-child(6) {
+  width: 110px;
+}
+
+.keysTable th:nth-child(7) {
+  width: 260px;
+}
+
+.truncate {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .table th,
 .table td {
   border-bottom: 1px solid #1f2937;
@@ -206,7 +345,11 @@ button:disabled {
 .rowActions {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+
+.rowActions button {
+  padding: 8px 10px;
 }
 
 .usage pre {

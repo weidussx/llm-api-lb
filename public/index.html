@@ -55,7 +55,13 @@
             <input id="baseUrl" data-i18n-placeholder="ph.baseUrl" placeholder="例如 https://api.openai.com/v1" />
           </label>
           <label class="span2">
-            <span data-i18n="form.model">Model（留空表示全模型）</span>
+            <div class="labelRow">
+              <span data-i18n="form.model">Model（留空表示全模型）</span>
+              <div class="helpWrap">
+                <button class="secondary helpIcon" id="btnModelHelp" type="button" aria-label="Model help">?</button>
+                <div class="tooltipPanel" data-i18n="help.model"></div>
+              </div>
+            </div>
             <select id="modelSelect"></select>
           </label>
           <label class="span2" id="modelCustomWrap" style="display: none">
@@ -86,11 +92,16 @@
       </section>
 
       <section class="card">
-        <h2 data-i18n="section.usage">使用方式</h2>
-        <div class="usage">
-          <p class="muted" data-i18n="usage.desc">把你业务里 OpenAI SDK 的 baseURL 指向本服务，并保持路径是 /v1。</p>
-          <pre><code id="usageText"></code></pre>
-        </div>
+        <details id="usageDetails" class="details">
+          <summary class="detailsSummary">
+            <h2 data-i18n="section.usage">使用方式</h2>
+            <span class="detailsChevron" aria-hidden="true">›</span>
+          </summary>
+          <div class="usage">
+            <p class="muted" data-i18n="usage.desc">把你业务里 OpenAI SDK 的 baseURL 指向本服务，并保持路径是 /v1。</p>
+            <pre><code id="usageText"></code></pre>
+          </div>
+        </details>
       </section>
 
       <section class="card">
@@ -113,6 +124,21 @@
         <div id="chart" class="chart"></div>
       </section>
     </main>
+
+    <div id="modalOverlay" class="modalOverlay" style="display: none" aria-hidden="true">
+      <div class="modalCard" role="dialog" aria-modal="true">
+        <div class="modalHeader">
+          <div id="modalTitle" class="modalTitle"></div>
+          <button id="modalClose" class="secondary modalClose" type="button" aria-label="Close">×</button>
+        </div>
+        <div id="modalBody" class="modalBody"></div>
+        <div id="modalHint" class="hint"></div>
+        <div class="modalActions right">
+          <button id="modalCancel" class="secondary" type="button" data-i18n="btn.cancel">取消</button>
+          <button id="modalOk" type="button" data-i18n="btn.save">保存</button>
+        </div>
+      </div>
+    </div>
 
     <script src="/app.js"></script>
   </body>

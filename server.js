@@ -412,7 +412,14 @@ async function fetchUpstream({ req, key, originalPathAndQuery }) {
     init.body = req.body;
   }
 
-  return fetch(upstreamUrl, init);
+  try {
+    return await fetch(upstreamUrl, init);
+  } catch (err) {
+    if (err && typeof err === "object") {
+      err.upstreamUrl = upstreamUrl;
+    }
+    throw err;
+  }
 }
 
 function sendUpstreamResponse(res, upstreamRes) {
@@ -610,6 +617,7 @@ app.get("/admin/stats", requireAdmin, async (req, res) => {
   });
 
   for (const [id, s] of perKeyUsage.entries()) {
+    if (!byId[id]) continue;
     const base =
       byId[id] ||
       (byId[id] = {
@@ -665,7 +673,7 @@ app.get("/admin/timeseries", requireAdmin, async (req, res) => {
     keyById[k.id] = { id: k.id, name: k.name, provider: k.provider };
   });
 
-  const targetIds = ids.length ? ids : Object.keys(keyById);
+  const targetIds = ids.length ? ids.filter((id) => Boolean(keyById[id])) : Object.keys(keyById);
   const series = targetIds.map((id) => {
     const info = keyById[id] || { id, name: id, provider: "" };
     const raw = perKeySeries.get(id) || new Map();
@@ -755,9 +763,17 @@ app.delete("/admin/keys/:id", requireAdmin, async (req, res) => {
   const id = req.params.id;
   const state = await readState();
   const before = state.keys.length;
+  const removed = state.keys.find((k) => k.id === id) || null;
   state.keys = state.keys.filter((k) => k.id !== id);
   if (state.keys.length === before) return res.status(404).json({ error: "not_found" });
   await writeState(state);
+  perKeyUsage.delete(id);
+  perKeySeries.delete(id);
+  if (removed) {
+    try {
+      metricKeyCooldown.remove(removed.provider, removed.id, removed.name);
+    } catch {}
+  }
   res.json({ ok: true });
 });
 
@@ -818,6 +834,7 @@ app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
   });
   const attempts = Math.max(1, poolKeys.length);
   let lastStatus = 502;
+  let lastErrorInfo = null;
 
   for (let i = 0; i < attempts; i += 1) {
     const chosen = pickKeyRoundRobin(state, { provider, model: requestedModel });
@@ -861,14 +878,19 @@ app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
         try {
           await upstreamRes.arrayBuffer();
         } catch {
-          return res.status(502).json({ error: "upstream_failed", provider, model: requestedModel || null });
+          lastErrorInfo = {
+            message: "upstream_body_read_failed",
+            upstream_url: null,
+            code: null,
+            cause_code: null
+          };
         }
         continue;
       }
 
       sendUpstreamResponse(res, upstreamRes);
       return;
-    } catch {
+    } catch (err) {
       const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
       metricRequestsTotal.inc({ ...labelsBase, status: "error" });
       metricRequestDuration.observe(labelsBase, durationMs / 1000);
@@ -876,10 +898,28 @@ app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
       metricInFlight.dec({ provider: labelsBase.provider, key_id: labelsBase.key_id, key_name: labelsBase.key_name });
       await markFailure(chosen.id, { status: null });
       lastStatus = 502;
+      const message = err && typeof err === "object" && "message" in err ? String(err.message) : String(err);
+      const upstreamUrl = err && typeof err === "object" && "upstreamUrl" in err ? String(err.upstreamUrl) : null;
+      const code = err && typeof err === "object" && "code" in err ? String(err.code) : null;
+      const causeCode =
+        err && typeof err === "object" && err.cause && typeof err.cause === "object" && "code" in err.cause
+          ? String(err.cause.code)
+          : null;
+      lastErrorInfo = {
+        message: message ? message.slice(0, 400) : "fetch_failed",
+        upstream_url: upstreamUrl,
+        code,
+        cause_code: causeCode
+      };
     }
   }
 
-  return res.status(lastStatus).json({ error: "upstream_failed", provider, model: requestedModel || null });
+  return res.status(lastStatus).json({
+    error: "upstream_failed",
+    provider,
+    model: requestedModel || null,
+    upstream_error: lastErrorInfo
+  });
 });
 
 function openBrowser(url) {
