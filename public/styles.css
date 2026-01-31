@@ -125,6 +125,18 @@ button:disabled {
   gap: 10px !important;
 }
 
+.apiKeyRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.apiKeyEnabled {
+  white-space: nowrap;
+  padding-bottom: 2px;
+}
+
 .hint {
   margin-top: 10px;
   font-size: 13px;

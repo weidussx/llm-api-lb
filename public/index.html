@@ -62,10 +62,16 @@
             <span data-i18n="form.apiKey">API Key</span>
             <input id="apiKey" data-i18n-placeholder="ph.apiKey" placeholder="必填" />
           </label>
-          <label class="inline">
-            <input type="checkbox" id="enabled" checked />
-            <span data-i18n="form.enabled">启用</span>
-          </label>
+          <div class="span2 apiKeyRow">
+            <label>
+              <span data-i18n="form.apiKey">API Key</span>
+              <input id="apiKey" data-i18n-placeholder="ph.apiKey" placeholder="必填" />
+            </label>
+            <label class="inline apiKeyEnabled">
+              <input type="checkbox" id="enabled" checked />
+              <span data-i18n="form.enabled">启用</span>
+            </label>
+          </div>
           <div class="span2 right">
             <button type="submit" data-i18n="btn.add">添加</button>
           </div>

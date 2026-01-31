@@ -610,9 +610,13 @@ app.run()
       [1024, "icon_512x512@2x.png"]
     ];
     for (const [px, name] of sizes) {
-      run("sips", ["-z", String(px), String(px), iconPng, "--out", path.join(iconsetDir, name)]);
+      run("sips", ["-z", String(px), String(px), iconPng, "--out", path.join(iconsetDir, name)], {
+        stdio: ["ignore", "ignore", "inherit"]
+      });
     }
-    run("iconutil", ["-c", "icns", iconsetDir, "-o", path.join(resourcesDir, "AppIcon.icns")]);
+    run("iconutil", ["-c", "icns", iconsetDir, "-o", path.join(resourcesDir, "AppIcon.icns")], {
+      stdio: ["ignore", "ignore", "inherit"]
+    });
 
     const armOut = path.join(buildDir, "llm-api-lb-arm64");
     const x64Out = path.join(buildDir, "llm-api-lb-x86_64");
