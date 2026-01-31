@@ -207,11 +207,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private var expectedInstanceId: String?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
-    NSApp.setActivationPolicy(.regular)
+    let isAutoStartLaunch = CommandLine.arguments.contains("--autostart")
+    let bundleId = Bundle.main.bundleIdentifier ?? "com.weidussx.llm-api-lb"
+    let currentPid = ProcessInfo.processInfo.processIdentifier
+    let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).filter { $0.processIdentifier != currentPid }
+    if let existing = others.first {
+      if !isAutoStartLaunch {
+        existing.activate(options: [.activateIgnoringOtherApps])
+      }
+      NSApp.terminate(nil)
+      return
+    }
+
+    NSApp.setActivationPolicy(isAutoStartLaunch ? .accessory : .regular)
     setupMainMenu()
     setupStatusItem()
     buildUI()
-    showMainWindow()
+    if !isAutoStartLaunch {
+      showMainWindow()
+    }
   }
 
   private func setupMainMenu() {
@@ -315,6 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   }
 
   private func showMainWindow() {
+    NSApp.setActivationPolicy(.regular)
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
   }
@@ -349,12 +364,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
   }
 
-  private func writeLaunchAgentPlist(executablePath: String) throws {
+  private func writeLaunchAgentPlist() throws {
     let dir = (NSHomeDirectory() as NSString).appendingPathComponent("Library/LaunchAgents")
     try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    let bundleId = Bundle.main.bundleIdentifier ?? "com.weidussx.llm-api-lb"
     let plist: [String: Any] = [
       "Label": autoStartLabel(),
-      "ProgramArguments": [executablePath],
+      "ProgramArguments": ["/usr/bin/open", "-gj", "-b", bundleId, "--args", "--autostart"],
       "RunAtLoad": true,
       "LimitLoadToSessionType": "Aqua"
     ]
@@ -369,12 +385,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private func setAutoStartEnabled(_ enabled: Bool) {
     let uid = String(getuid())
     let plistPath = launchAgentPlistPath()
-    guard let exeUrl = Bundle.main.executableURL else { return }
-    let exePath = exeUrl.path
 
     if enabled {
       do {
-        try writeLaunchAgentPlist(executablePath: exePath)
+        try writeLaunchAgentPlist()
       } catch {
         let alert = NSAlert()
         alert.messageText = "设置失败"
