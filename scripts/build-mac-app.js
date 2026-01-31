@@ -197,6 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private var statusLabel: NSTextField!
   private var statusItem: NSStatusItem!
   private var menuOpenMain: NSMenuItem!
+  private var menuAutoStart: NSMenuItem!
   private var menuStart: NSMenuItem!
   private var menuStop: NSMenuItem!
   private var menuOpenBrowser: NSMenuItem!
@@ -283,6 +284,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     menuOpenMain.target = self
     menu.addItem(menuOpenMain)
 
+    menuAutoStart = NSMenuItem(title: "开机自启动", action: #selector(onToggleAutoStart), keyEquivalent: "")
+    menuAutoStart.target = self
+    menuAutoStart.state = isAutoStartEnabled() ? .on : .off
+    menu.addItem(menuAutoStart)
+
     menu.addItem(NSMenuItem.separator())
 
     menuStart = NSMenuItem(title: "启动", action: #selector(onStart), keyEquivalent: "")
@@ -315,6 +321,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
   @objc private func onMenuOpenMain() {
     showMainWindow()
+  }
+
+  private func autoStartLabel() -> String {
+    return "com.weidussx.llm-api-lb.autostart"
+  }
+
+  private func launchAgentPlistPath() -> String {
+    let dir = (NSHomeDirectory() as NSString).appendingPathComponent("Library/LaunchAgents")
+    return (dir as NSString).appendingPathComponent("\\(autoStartLabel()).plist")
+  }
+
+  private func isAutoStartEnabled() -> Bool {
+    return FileManager.default.fileExists(atPath: launchAgentPlistPath())
+  }
+
+  private func runLaunchctl(_ args: [String]) -> Bool {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+    p.arguments = args
+    do {
+      try p.run()
+      p.waitUntilExit()
+      return p.terminationStatus == 0
+    } catch {
+      return false
+    }
+  }
+
+  private func writeLaunchAgentPlist(executablePath: String) throws {
+    let dir = (NSHomeDirectory() as NSString).appendingPathComponent("Library/LaunchAgents")
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    let plist: [String: Any] = [
+      "Label": autoStartLabel(),
+      "ProgramArguments": [executablePath],
+      "RunAtLoad": true,
+      "LimitLoadToSessionType": "Aqua"
+    ]
+    let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+    try data.write(to: URL(fileURLWithPath: launchAgentPlistPath()), options: [.atomic])
+  }
+
+  private func removeLaunchAgentPlist() {
+    try? FileManager.default.removeItem(atPath: launchAgentPlistPath())
+  }
+
+  private func setAutoStartEnabled(_ enabled: Bool) {
+    let uid = String(getuid())
+    let plistPath = launchAgentPlistPath()
+    guard let exeUrl = Bundle.main.executableURL else { return }
+    let exePath = exeUrl.path
+
+    if enabled {
+      do {
+        try writeLaunchAgentPlist(executablePath: exePath)
+      } catch {
+        let alert = NSAlert()
+        alert.messageText = "设置失败"
+        alert.informativeText = "无法写入 LaunchAgent 配置文件。"
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+        return
+      }
+
+      _ = runLaunchctl(["bootout", "gui/\\(uid)", plistPath])
+      let ok = runLaunchctl(["bootstrap", "gui/\\(uid)", plistPath]) || runLaunchctl(["load", "-w", plistPath])
+      if !ok {
+        let alert = NSAlert()
+        alert.messageText = "设置失败"
+        alert.informativeText = "launchctl 执行失败。"
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+        return
+      }
+    } else {
+      _ = runLaunchctl(["bootout", "gui/\\(uid)", plistPath]) || runLaunchctl(["unload", "-w", plistPath])
+      removeLaunchAgentPlist()
+    }
+
+    menuAutoStart.state = enabled ? .on : .off
+  }
+
+  @objc private func onToggleAutoStart() {
+    let next = !isAutoStartEnabled()
+    setAutoStartEnabled(next)
   }
 
   @objc private func onMenuAbout() {
