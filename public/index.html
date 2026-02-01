@@ -73,13 +73,19 @@
               <span data-i18n="form.apiKey">API Key</span>
               <input id="apiKey" data-i18n-placeholder="ph.apiKey" placeholder="必填" />
             </label>
+            <label>
+              <div class="labelRow">
+                <span data-i18n="form.weight">轮询权重</span>
+                <div class="helpWrap">
+                  <button class="secondary helpIcon" id="btnWeightHelp" type="button" aria-label="Weight help">?</button>
+                  <div class="tooltipPanel" data-i18n="help.weight"></div>
+                </div>
+              </div>
+              <input id="weight" type="number" min="1" step="1" inputmode="numeric" data-i18n-placeholder="ph.weight" placeholder="默认 1" value="1" />
+            </label>
             <label class="inline apiKeyEnabled">
               <input type="checkbox" id="enabled" checked />
               <span data-i18n="form.enabled">启用</span>
-            </label>
-            <label>
-              <span data-i18n="form.weight">轮询权重</span>
-              <input id="weight" inputmode="numeric" data-i18n-placeholder="ph.weight" placeholder="默认 1" value="1" />
             </label>
           </div>
           <div class="span2 right">

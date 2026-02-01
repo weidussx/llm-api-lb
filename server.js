@@ -612,6 +612,11 @@ app.use((req, res, next) => {
 });
 
 app.use("/admin", express.json({ limit: "1mb" }));
+app.use("/admin", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Pragma", "no-cache");
+  next();
+});
 
 app.get("/admin/presets", requireAdmin, (req, res) => {
   res.json({ presets: PRESETS });

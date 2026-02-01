@@ -96,6 +96,24 @@ async function adminCreateKey(lbUrl, { provider, apiKey, baseUrl, name, weight }
   return data.id;
 }
 
+async function adminUpdateKey(lbUrl, id, patch) {
+  const res = await fetch(`${lbUrl}/admin/keys/${id}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(patch || {})
+  });
+  const text = await res.text();
+  assert.equal(res.status, 200, text);
+}
+
+async function adminListKeys(lbUrl) {
+  const res = await fetch(`${lbUrl}/admin/keys`);
+  const text = await res.text();
+  assert.equal(res.status, 200, text);
+  const data = JSON.parse(text);
+  return (data && data.keys) || [];
+}
+
 test("rewrites /v1 prefix for upstream join", async () => {
   let seenPath = null;
   const upstream = await startMockUpstream((req, res) => {
@@ -265,6 +283,41 @@ test("weighted round-robin prefers higher weight keys", async () => {
     const c1 = hits.filter((h) => h === "Bearer K1").length;
     const c2 = hits.filter((h) => h === "Bearer K2").length;
     assert.ok(c1 > c2, `expected K1(${c1}) > K2(${c2}); hits=${hits.join(",")}`);
+  } finally {
+    await lb.kill();
+    await upstream.close();
+    await fs.rm(dataFile, { force: true });
+  }
+});
+
+test("updates key weight via admin PUT", async () => {
+  const upstream = await startMockUpstream(async (req, res) => {
+    res.statusCode = 200;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ ok: true }));
+  });
+
+  const dataFile = path.join(os.tmpdir(), `llm-key-lb-test-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+  await fs.mkdir(path.dirname(dataFile), { recursive: true });
+  await fs.writeFile(dataFile, JSON.stringify({ version: 1, rrIndex: 0, rrIndexByPool: {}, keys: [] }, null, 2));
+
+  const port = await getFreePort();
+  const lb = await startLb({ port, dataFile });
+
+  try {
+    const id = await adminCreateKey(lb.url, {
+      provider: "custom",
+      apiKey: "K1",
+      baseUrl: `http://127.0.0.1:${upstream.port}/v1`,
+      name: "k1",
+      weight: 1
+    });
+
+    await adminUpdateKey(lb.url, id, { weight: 7 });
+    const keys = await adminListKeys(lb.url);
+    const found = keys.find((k) => k.id === id);
+    assert.ok(found, "key should exist");
+    assert.equal(found.weight, 7);
   } finally {
     await lb.kill();
     await upstream.close();

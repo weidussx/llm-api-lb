@@ -74,6 +74,7 @@ const I18N = {
 
     "help.endpoints": "- 管理界面：http://localhost:8787/\n- 健康检查：http://localhost:8787/health\n- OpenAI 兼容入口：http://localhost:8787/v1\n- Prometheus 指标：http://localhost:8787/metrics",
     "help.model": "- 建议留空：让其他 app 在请求里自行指定 model（更灵活）。\n- 只有需要限制该 Key 只能用于某些模型时，才在这里设置 Model。",
+    "help.weight": "- 默认 1。\n- 权重越大，在同一 provider/model 池里被选中的次数越多。\n- 建议按各家 RPM/TPM 或稳定性来调。",
     "modal.edit.title": "编辑 Key",
     "modal.token.title": "设置管理令牌",
     "modal.field.name": "名称",
@@ -203,6 +204,7 @@ const I18N = {
 
     "help.endpoints": "- UI: http://localhost:8787/\n- Health: http://localhost:8787/health\n- OpenAI-compatible API: http://localhost:8787/v1\n- Prometheus metrics: http://localhost:8787/metrics",
     "help.model": "- Keep this empty if you want apps to choose models per request.\n- Set model(s) here only if you want to restrict which models this key can use.",
+    "help.weight": "- Default is 1.\n- Higher weight = selected more often within the same provider/model pool.\n- Tune based on each upstream's rate limits or stability.",
     "modal.edit.title": "Edit key",
     "modal.token.title": "Set admin token",
     "modal.field.name": "Name",
@@ -356,7 +358,7 @@ function headers() {
 }
 
 async function api(path, init = {}) {
-  const res = await fetch(path, init);
+  const res = await fetch(path, { cache: "no-store", ...init });
   const text = await res.text();
   let data = null;
   try {
@@ -412,7 +414,7 @@ function closeModal() {
   if (m.btnOk) m.btnOk.disabled = false;
 }
 
-function openModal({ titleKey, bodyNodes, onOk }) {
+function openModal({ titleKey, bodyNodes, onOk, closeOnBackdrop = false }) {
   const m = getModalEls();
   if (!m.overlay || !m.title || !m.body || !m.btnOk || !m.btnCancel || !m.btnClose) return;
 
@@ -436,7 +438,7 @@ function openModal({ titleKey, bodyNodes, onOk }) {
   if (firstInput && typeof firstInput.focus === "function") firstInput.focus();
 
   m.overlay.onclick = (e) => {
-    if (e.target === m.overlay) closeModal();
+    if (closeOnBackdrop && e.target === m.overlay) closeModal();
   };
   m.btnCancel.onclick = () => closeModal();
   m.btnClose.onclick = () => closeModal();
@@ -464,7 +466,7 @@ function openEditKeyModal({ key, hint, onDone }) {
   const inputModels = el("input");
   inputModels.value = key && Array.isArray(key.models) ? key.models.join(",") : "";
 
-  const inputWeight = el("input", { inputmode: "numeric", "data-i18n-placeholder": "modal.ph.weight" });
+  const inputWeight = el("input", { type: "number", min: "1", step: "1", inputmode: "numeric", "data-i18n-placeholder": "modal.ph.weight" });
   inputWeight.value = key && key.weight ? String(key.weight) : "1";
 
   const inputApiKey = el("input", { type: "password", "data-i18n-placeholder": "modal.ph.apiKeyKeep" });

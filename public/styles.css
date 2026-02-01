@@ -255,8 +255,7 @@ button:disabled {
 
 .apiKeyRow {
   display: grid;
-  grid-template-columns: minmax(0, 520px) auto;
-  grid-template-rows: auto auto;
+  grid-template-columns: minmax(0, 1fr) 200px auto;
   gap: 12px;
   align-items: end;
 }
@@ -270,9 +269,25 @@ button:disabled {
 }
 
 .apiKeyEnabled {
-  grid-row: 1 / span 2;
+  justify-content: flex-end;
   white-space: nowrap;
   padding-bottom: 2px;
+}
+
+@media (max-width: 780px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .span2 {
+    grid-column: span 1;
+  }
+  .apiKeyRow {
+    grid-template-columns: 1fr;
+  }
+  .apiKeyEnabled {
+    justify-content: flex-start;
+    padding-bottom: 0;
+  }
 }
 
 .hint {
