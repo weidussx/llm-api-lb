@@ -1,6 +1,6 @@
 {
   "name": "llm-api-lb",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Local LLM API load balancer with round-robin and a small management UI",
   "license": "MIT",
   "type": "commonjs",

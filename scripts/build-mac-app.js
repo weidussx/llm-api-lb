@@ -156,6 +156,25 @@ import WebKit
 import Foundation
 import Darwin
 
+enum AppLang: String {
+  case zh = "zh"
+  case en = "en"
+}
+
+func systemPreferredLang() -> AppLang {
+  let first = (Locale.preferredLanguages.first ?? "").lowercased()
+  return first.hasPrefix("zh") ? .zh : .en
+}
+
+func loadAppLang() -> AppLang {
+  let raw = (UserDefaults.standard.string(forKey: "appLang") ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+  return AppLang(rawValue: raw) ?? systemPreferredLang()
+}
+
+func saveAppLang(_ lang: AppLang) {
+  UserDefaults.standard.set(lang.rawValue, forKey: "appLang")
+}
+
 func machineArch() -> String {
   var u = utsname()
   uname(&u)
@@ -197,6 +216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private var statusLabel: NSTextField!
   private var statusItem: NSStatusItem!
   private var menuOpenMain: NSMenuItem!
+  private var menuLangToggle: NSMenuItem!
   private var menuAutoStart: NSMenuItem!
   private var menuStart: NSMenuItem!
   private var menuStop: NSMenuItem!
@@ -205,6 +225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private var pollingTimer: Timer?
   private var currentURL: URL?
   private var expectedInstanceId: String?
+  private var appLang: AppLang = loadAppLang()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     let isAutoStartLaunch = CommandLine.arguments.contains("--autostart")
@@ -223,6 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     setupMainMenu()
     setupStatusItem()
     buildUI()
+    updateLangMenuTitle()
     if !isAutoStartLaunch {
       showMainWindow()
     }
@@ -303,6 +325,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     menuAutoStart.state = isAutoStartEnabled() ? .on : .off
     menu.addItem(menuAutoStart)
 
+    menuLangToggle = NSMenuItem(title: "", action: #selector(onToggleLang), keyEquivalent: "")
+    menuLangToggle.target = self
+    menu.addItem(menuLangToggle)
+
     menu.addItem(NSMenuItem.separator())
 
     menuStart = NSMenuItem(title: "启动", action: #selector(onStart), keyEquivalent: "")
@@ -326,6 +352,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     menu.addItem(quitItem)
 
     statusItem.menu = menu
+  }
+
+  private func updateLangMenuTitle() {
+    if menuLangToggle != nil {
+      menuLangToggle.title = (appLang == .en) ? "中文" : "EN"
+    }
+  }
+
+  @objc private func onToggleLang() {
+    appLang = (appLang == .en) ? .zh : .en
+    saveAppLang(appLang)
+    updateLangMenuTitle()
+    syncLangToWeb()
+  }
+
+  private func syncLangToWeb() {
+    let lang = appLang.rawValue
+    let js =
+      "try{if(typeof setLang==='function'){setLang('\\(lang)');}}catch(e){};" +
+      "try{if(typeof applyI18n==='function'){applyI18n();}}catch(e){};" +
+      "try{if(typeof fillUsage==='function'){fillUsage();}}catch(e){};" +
+      "try{if(typeof refreshAll==='function'){refreshAll();}}catch(e){};"
+    webView.evaluateJavaScript(js, completionHandler: nil)
+  }
+
+  func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    updateLangMenuTitle()
+    syncLangToWeb()
   }
 
   private func showMainWindow() {
