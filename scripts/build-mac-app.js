@@ -175,6 +175,14 @@ func saveAppLang(_ lang: AppLang) {
   UserDefaults.standard.set(lang.rawValue, forKey: "appLang")
 }
 
+func loadHideDockIcon() -> Bool {
+  UserDefaults.standard.bool(forKey: "hideDockIcon")
+}
+
+func saveHideDockIcon(_ v: Bool) {
+  UserDefaults.standard.set(v, forKey: "hideDockIcon")
+}
+
 func machineArch() -> String {
   var u = utsname()
   uname(&u)
@@ -218,6 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private var menuOpenMain: NSMenuItem!
   private var menuLangToggle: NSMenuItem!
   private var menuAutoStart: NSMenuItem!
+  private var menuHideDockIcon: NSMenuItem!
   private var menuStart: NSMenuItem!
   private var menuStop: NSMenuItem!
   private var menuOpenBrowser: NSMenuItem!
@@ -226,6 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   private var currentURL: URL?
   private var expectedInstanceId: String?
   private var appLang: AppLang = loadAppLang()
+  private var hideDockIcon: Bool = loadHideDockIcon()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     let isAutoStartLaunch = CommandLine.arguments.contains("--autostart")
@@ -240,7 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
       return
     }
 
-    NSApp.setActivationPolicy(isAutoStartLaunch ? .accessory : .regular)
+    NSApp.setActivationPolicy((isAutoStartLaunch || hideDockIcon) ? .accessory : .regular)
     setupMainMenu()
     setupStatusItem()
     buildUI()
@@ -329,6 +339,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     menuLangToggle.target = self
     menu.addItem(menuLangToggle)
 
+    menuHideDockIcon = NSMenuItem(title: "隐藏 Dock 栏图标", action: #selector(onToggleHideDockIcon), keyEquivalent: "")
+    menuHideDockIcon.target = self
+    menuHideDockIcon.state = hideDockIcon ? .on : .off
+    menu.addItem(menuHideDockIcon)
+
     menu.addItem(NSMenuItem.separator())
 
     menuStart = NSMenuItem(title: "启动", action: #selector(onStart), keyEquivalent: "")
@@ -360,6 +375,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
   }
 
+  @objc private func onToggleHideDockIcon() {
+    hideDockIcon = !hideDockIcon
+    saveHideDockIcon(hideDockIcon)
+    if menuHideDockIcon != nil {
+      menuHideDockIcon.state = hideDockIcon ? .on : .off
+    }
+    NSApp.setActivationPolicy(hideDockIcon ? .accessory : .regular)
+    if let w = window, w.isVisible {
+      NSApp.activate(ignoringOtherApps: true)
+    }
+  }
+
   @objc private func onToggleLang() {
     appLang = (appLang == .en) ? .zh : .en
     saveAppLang(appLang)
@@ -383,7 +410,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   }
 
   private func showMainWindow() {
-    NSApp.setActivationPolicy(.regular)
+    if !hideDockIcon {
+      NSApp.setActivationPolicy(.regular)
+    }
     window.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
   }
