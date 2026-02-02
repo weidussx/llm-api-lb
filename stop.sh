@@ -1,28 +1,28 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
 
-cd "$(dirname "$0")"
+# Find process by port (default 8787) or by script name
+PORT=${PORT:-8787}
 
-port="${1:-8787}"
-if ! [[ "${port}" =~ ^[0-9]+$ ]]; then
-  echo "usage: ./stop.sh [port]" >&2
-  exit 2
-fi
+echo "Stopping llm-key-lb..."
 
-pid="$(lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null | head -n 1 || true)"
-if [[ -z "${pid}" ]]; then
-  echo "no process listening on port ${port}"
-  exit 0
-fi
+# Try to find PID listening on port
+PID=$(lsof -t -i:$PORT)
 
-kill "${pid}" 2>/dev/null || true
-for _ in {1..30}; do
-  if ! lsof -tiTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1; then
-    echo "stopped (pid ${pid})"
-    exit 0
+if [ -n "$PID" ]; then
+  echo "Found process $PID listening on port $PORT. Killing..."
+  kill $PID
+  echo "Stopped."
+else
+  echo "No process found listening on port $PORT."
+  
+  # Fallback: try to find by process name (node server.js)
+  # Be careful not to kill other node processes
+  PIDS=$(ps aux | grep "[n]ode .*server.js" | awk '{print $2}')
+  if [ -n "$PIDS" ]; then
+    echo "Found node server.js process(es): $PIDS. Killing..."
+    kill $PIDS
+    echo "Stopped."
+  else
+    echo "No running server.js found."
   fi
-  sleep 0.2
-done
-
-kill -9 "${pid}" 2>/dev/null || true
-echo "force stopped (pid ${pid})"
+fi
