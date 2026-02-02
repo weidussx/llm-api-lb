@@ -717,7 +717,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     startPollingHealth(url)
   }
 
+  private func updateStatusIcon(active: Bool) {
+    guard let button = statusItem.button else { return }
+    button.alphaValue = active ? 1.0 : 0.4
+  }
+
   private func stopChild() {
+    updateStatusIcon(active: false)
     pollingTimer?.invalidate()
     pollingTimer = nil
     currentURL = nil
@@ -760,6 +766,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
           DispatchQueue.main.async {
             t.invalidate()
             self.statusLabel.stringValue = "已启动：\\(base.absoluteString)"
+            self.updateStatusIcon(active: true)
             self.webView.load(URLRequest(url: base))
           }
         }
