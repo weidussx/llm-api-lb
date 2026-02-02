@@ -367,6 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     menu.addItem(quitItem)
 
     statusItem.menu = menu
+    updateStatusIcon(active: false)
   }
 
   private func updateLangMenuTitle() {
@@ -519,25 +520,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
   }
 
   @objc private func onMenuQuit() {
-    let alert = NSAlert()
-    alert.messageText = "退出 llm-api-lb？"
-    alert.informativeText = "服务将停止运行，API 接口将不可用。"
-    alert.addButton(withTitle: "退出")
-    alert.addButton(withTitle: "取消")
-    alert.alertStyle = .warning
-    
-    // 如果主窗口可见，作为 sheet 弹出；否则作为模态窗口弹出
-    if let w = window, w.isVisible {
-      alert.beginSheetModal(for: w) { resp in
+    if child != nil && child!.isRunning {
+      let alert = NSAlert()
+      alert.messageText = "退出 llm-api-lb？"
+      alert.informativeText = "服务将停止运行，API 接口将不可用。"
+      alert.addButton(withTitle: "退出")
+      alert.addButton(withTitle: "取消")
+      alert.alertStyle = .warning
+      
+      // 如果主窗口可见，作为 sheet 弹出；否则作为模态窗口弹出
+      if let w = window, w.isVisible {
+        alert.beginSheetModal(for: w) { resp in
+          if resp == .alertFirstButtonReturn {
+            self.doQuit()
+          }
+        }
+      } else {
+        let resp = alert.runModal()
         if resp == .alertFirstButtonReturn {
-          self.doQuit()
+          doQuit()
         }
       }
     } else {
-      let resp = alert.runModal()
-      if resp == .alertFirstButtonReturn {
-        doQuit()
-      }
+      doQuit()
     }
   }
 
