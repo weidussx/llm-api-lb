@@ -73,7 +73,9 @@ function validateBaseUrl(raw) {
 }
 
 function ensureTrailingSlash(url) {
-  return url.endsWith("/") ? url : `${url}/`;
+  if (!url || typeof url !== "string") return "/";
+  const s = url.trim();
+  return s.endsWith("/") ? s : `${s}/`;
 }
 
 function normalizeApiKey(raw) {
@@ -91,9 +93,10 @@ function normalizeApiKey(raw) {
 
 function safeJoinUrl(baseUrl, pathnameAndQuery) {
   const normalizedBase = ensureTrailingSlash(baseUrl);
-  const normalizedPath = pathnameAndQuery.startsWith("/")
-    ? pathnameAndQuery.slice(1)
-    : pathnameAndQuery;
+  const pathRaw = pathnameAndQuery && typeof pathnameAndQuery === "string" ? pathnameAndQuery.trim() : "";
+  const normalizedPath = pathRaw.startsWith("/")
+    ? pathRaw.slice(1)
+    : pathRaw;
   return new URL(normalizedPath, normalizedBase).toString();
 }
 
