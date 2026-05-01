@@ -18,6 +18,14 @@ const INSTANCE_ID = (process.env.LLM_KEY_LB_INSTANCE_ID || (crypto.randomUUID ? 
 
 const METRICS_PATH = process.env.METRICS_PATH || "/metrics";
 
+const UPSTREAM_TIMEOUT_MS = (() => {
+  const raw = process.env.UPSTREAM_TIMEOUT_MS;
+  if (raw === undefined || raw === "") return 30_000;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) return 30_000;
+  return n;
+})();
+
 const IS_PKG = Boolean(process.pkg);
 const LAUNCHER_MODE = process.env.LAUNCHER_MODE ? process.env.LAUNCHER_MODE === "1" : IS_PKG;
 const AUTO_OPEN_BROWSER = process.env.AUTO_OPEN_BROWSER ? process.env.AUTO_OPEN_BROWSER === "1" : IS_PKG;
@@ -280,38 +288,102 @@ async function ensureDataDir() {
   await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
 }
 
-async function readState() {
+let cachedState = null;
+let flushTimer = null;
+let flushInFlight = null;
+let flushPending = false;
+const FLUSH_DEBOUNCE_MS = 200;
+
+function defaultState() {
+  return { version: 1, rrIndex: 0, rrIndexByPool: {}, keys: [] };
+}
+
+function normalizeState(parsed) {
+  if (!parsed || typeof parsed !== "object") return defaultState();
+  if (!Array.isArray(parsed.keys)) parsed.keys = [];
+  parsed.keys.forEach((k) => {
+    if (!k || typeof k !== "object") return;
+    if (k.weight === undefined || k.weight === null) k.weight = 1;
+    k.weight = normalizeWeight(k.weight);
+  });
+  if (typeof parsed.rrIndex !== "number") parsed.rrIndex = 0;
+  if (!parsed.rrIndexByPool || typeof parsed.rrIndexByPool !== "object") parsed.rrIndexByPool = {};
+  if (typeof parsed.version !== "number") parsed.version = 1;
+  return parsed;
+}
+
+async function loadState() {
   await ensureDataDir();
   try {
     const raw = await fs.readFile(DATA_FILE, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") throw new Error("invalid_state");
-    if (!Array.isArray(parsed.keys)) parsed.keys = [];
-    parsed.keys.forEach((k) => {
-      if (!k || typeof k !== "object") return;
-      if (k.weight === undefined || k.weight === null) k.weight = 1;
-      k.weight = normalizeWeight(k.weight);
-    });
-    if (typeof parsed.rrIndex !== "number") parsed.rrIndex = 0;
-    if (!parsed.rrIndexByPool || typeof parsed.rrIndexByPool !== "object") parsed.rrIndexByPool = {};
-    if (typeof parsed.version !== "number") parsed.version = 1;
-    return parsed;
-  } catch (e) {
-    const fresh = { version: 1, rrIndex: 0, rrIndexByPool: {}, keys: [] };
-    await writeState(fresh);
-    return fresh;
+    cachedState = normalizeState(JSON.parse(raw));
+  } catch {
+    cachedState = defaultState();
+    await persistNow();
   }
+  return cachedState;
 }
 
-async function writeState(state) {
+function getState() {
+  if (!cachedState) cachedState = defaultState();
+  return cachedState;
+}
+
+async function persistNow() {
+  if (!cachedState) return;
   await ensureDataDir();
   const tmp = `${DATA_FILE}.${crypto.randomUUID()}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
+  await fs.writeFile(tmp, JSON.stringify(cachedState, null, 2), "utf8");
   await fs.rename(tmp, DATA_FILE);
 }
 
+function scheduleFlush() {
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    flushPending = false;
+    flushInFlight = persistNow()
+      .catch((err) => {
+        process.stderr.write(`state flush failed: ${err && err.message ? err.message : err}\n`);
+      })
+      .finally(() => {
+        flushInFlight = null;
+        if (flushPending) scheduleFlush();
+      });
+  }, FLUSH_DEBOUNCE_MS);
+}
+
+function markStateDirty() {
+  if (flushInFlight) {
+    flushPending = true;
+    return;
+  }
+  scheduleFlush();
+}
+
+async function flushNow() {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  if (flushInFlight) {
+    try { await flushInFlight; } catch {}
+  }
+  await persistNow().catch((err) => {
+    process.stderr.write(`state flush failed: ${err && err.message ? err.message : err}\n`);
+  });
+}
+
+function isLoopback(req) {
+  const ip = (req.socket && req.socket.remoteAddress) || "";
+  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+}
+
 function requireAdmin(req, res, next) {
-  if (!ADMIN_TOKEN) return next();
+  if (!ADMIN_TOKEN) {
+    if (isLoopback(req)) return next();
+    return res.status(401).json({ error: "admin_token_required" });
+  }
   const token = req.header("x-admin-token") || "";
   if (token === ADMIN_TOKEN) return next();
   return res.status(401).json({ error: "unauthorized" });
@@ -389,8 +461,8 @@ function pickKeyRoundRobin(state, { provider, model }) {
   return pool[soonestKeyIdx];
 }
 
-async function markFailure(keyId, { status }) {
-  const state = await readState();
+function markFailure(keyId, { status }) {
+  const state = getState();
   const key = state.keys.find((k) => k.id === keyId);
   if (!key) return;
   key.failures = (key.failures || 0) + 1;
@@ -399,17 +471,17 @@ async function markFailure(keyId, { status }) {
     key.cooldownUntil = Date.now() + cooldownMs;
   }
   key.updatedAt = nowIso();
-  await writeState(state);
+  markStateDirty();
 }
 
-async function markSuccess(keyId) {
-  const state = await readState();
+function markSuccess(keyId) {
+  const state = getState();
   const key = state.keys.find((k) => k.id === keyId);
   if (!key) return;
   key.failures = 0;
   key.cooldownUntil = 0;
   key.updatedAt = nowIso();
-  await writeState(state);
+  markStateDirty();
 }
 
 async function extractModelFromRequest(req) {
@@ -447,13 +519,25 @@ async function fetchUpstream({ req, key, originalPathAndQuery }) {
     init.body = req.body;
   }
 
+  let timer = null;
+  if (UPSTREAM_TIMEOUT_MS > 0) {
+    const ctrl = new AbortController();
+    init.signal = ctrl.signal;
+    timer = setTimeout(() => ctrl.abort(), UPSTREAM_TIMEOUT_MS);
+  }
+
   try {
     return await fetch(upstreamUrl, init);
   } catch (err) {
     if (err && typeof err === "object") {
       err.upstreamUrl = upstreamUrl;
+      if (err.name === "AbortError" && !err.code) {
+        err.code = "UPSTREAM_TIMEOUT";
+      }
     }
     throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -625,8 +709,8 @@ app.get("/admin/presets", requireAdmin, (req, res) => {
   res.json({ presets: PRESETS });
 });
 
-app.get("/admin/keys", requireAdmin, async (req, res) => {
-  const state = await readState();
+app.get("/admin/keys", requireAdmin, (req, res) => {
+  const state = getState();
   const keys = state.keys.map((k) => ({
     ...k,
     apiKeyMasked: maskKey(k.apiKey),
@@ -635,8 +719,8 @@ app.get("/admin/keys", requireAdmin, async (req, res) => {
   res.json({ keys });
 });
 
-app.get("/admin/stats", requireAdmin, async (req, res) => {
-  const state = await readState();
+app.get("/admin/stats", requireAdmin, (req, res) => {
+  const state = getState();
   const byId = {};
   state.keys.forEach((k) => {
     byId[k.id] = {
@@ -696,8 +780,8 @@ app.get("/admin/stats", requireAdmin, async (req, res) => {
   res.json({ items });
 });
 
-app.get("/admin/timeseries", requireAdmin, async (req, res) => {
-  const state = await readState();
+app.get("/admin/timeseries", requireAdmin, (req, res) => {
+  const state = getState();
   const now = Date.now();
   const bucket = Math.floor(now / SERIES_BUCKET_MS) * SERIES_BUCKET_MS;
   const windowStart = bucket - SERIES_WINDOW_MINUTES * SERIES_BUCKET_MS;
@@ -750,7 +834,7 @@ app.post("/admin/keys", requireAdmin, async (req, res) => {
   if (!normalizedBaseUrl) return res.status(400).json({ error: "baseUrl_invalid" });
   const normalizedWeight = normalizeWeight(weight);
 
-  const state = await readState();
+  const state = getState();
   const id = crypto.randomUUID();
   const createdAt = nowIso();
   const record = {
@@ -768,14 +852,14 @@ app.post("/admin/keys", requireAdmin, async (req, res) => {
     updatedAt: createdAt
   };
   state.keys.push(record);
-  await writeState(state);
+  await flushNow();
   res.json({ id });
 });
 
 app.put("/admin/keys/:id", requireAdmin, async (req, res) => {
   const id = req.params.id;
   const { name, provider, apiKey, baseUrl, models, enabled, weight } = req.body || {};
-  const state = await readState();
+  const state = getState();
   const key = state.keys.find((k) => k.id === id);
   if (!key) return res.status(404).json({ error: "not_found" });
 
@@ -798,18 +882,18 @@ app.put("/admin/keys/:id", requireAdmin, async (req, res) => {
   if (typeof enabled === "boolean") key.enabled = enabled;
   if (weight !== undefined) key.weight = normalizeWeight(weight);
   key.updatedAt = nowIso();
-  await writeState(state);
+  await flushNow();
   res.json({ ok: true });
 });
 
 app.delete("/admin/keys/:id", requireAdmin, async (req, res) => {
   const id = req.params.id;
-  const state = await readState();
+  const state = getState();
   const before = state.keys.length;
   const removed = state.keys.find((k) => k.id === id) || null;
   state.keys = state.keys.filter((k) => k.id !== id);
   if (state.keys.length === before) return res.status(404).json({ error: "not_found" });
-  await writeState(state);
+  await flushNow();
   perKeyUsage.delete(id);
   perKeySeries.delete(id);
   if (removed) {
@@ -853,7 +937,7 @@ app.use("/v1", express.raw({ type: "*/*", limit: "20mb" }));
 app.use("/", express.raw({ type: "*/*", limit: "20mb" }));
 
 app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
-  const state = await readState();
+  const state = getState();
 
   const requestedModel = await extractModelFromRequest(req);
   const requestedProvider =
@@ -881,7 +965,7 @@ app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
 
   for (let i = 0; i < attempts; i += 1) {
     const chosen = pickKeyRoundRobin(state, { provider, model: requestedModel });
-    await writeState(state);
+    markStateDirty();
 
     if (!chosen) {
       return res.status(503).json({ error: "no_available_apikey", provider, model: requestedModel || null });
@@ -999,6 +1083,7 @@ async function startMain() {
   runtimeMode = "main";
   launcherReason = null;
   try {
+    await loadState();
     const server = await listenAsync(PORT);
     runtimeListenPort = PORT;
     const url = `http://localhost:${PORT}/`;
@@ -1015,6 +1100,19 @@ async function startMain() {
     process.exit(1);
   }
 }
+
+let shuttingDown = false;
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    await flushNow();
+  } finally {
+    process.exit(signal === "SIGTERM" || signal === "SIGINT" ? 0 : 1);
+  }
+}
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 if (LAUNCHER_MODE) startLauncher(null).catch((e) => (process.stderr.write(String(e && e.stack ? e.stack : e) + "\n"), process.exit(1)));
 else startMain();
