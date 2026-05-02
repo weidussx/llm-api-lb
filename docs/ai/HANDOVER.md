@@ -15,7 +15,8 @@
 - On-disk schema for `state.json` unchanged. New `stats.json` introduced and documented.
 
 ## Next Steps
-- Dead code: `server.js:16 const INSTANCE_ID` reads the wrong env var name (`LLM_KEY_LB_INSTANCE_ID`) and is never referenced. Safe to delete.
+- No outstanding follow-ups from the optimization sweep.
+- If Cloudflare AI Gateway pass-through is wanted, it is **not** implemented — the orphan test that referenced `PUT /admin/ai-gateway` and `aiGatewayEnabled` was removed. Reintroduce alongside an actual implementation if/when needed.
 
 ## Body handling (post-PR #1)
 - Proxy reads request body itself, no global `express.raw`.

@@ -13,8 +13,6 @@ const { Readable } = require("stream");
 const PORT = parseInt(process.env.PORT || "8787", 10);
 const ADMIN_TOKEN = (process.env.ADMIN_TOKEN || "").trim();
 const DATA_FILE = process.env.DATA_FILE || path.join(process.cwd(), "data", "state.json");
-const INSTANCE_ID = (process.env.LLM_KEY_LB_INSTANCE_ID || (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex")))
-  .trim();
 
 const METRICS_PATH = process.env.METRICS_PATH || "/metrics";
 
