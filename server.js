@@ -18,6 +18,22 @@ const INSTANCE_ID = (process.env.LLM_KEY_LB_INSTANCE_ID || (crypto.randomUUID ? 
 
 const METRICS_PATH = process.env.METRICS_PATH || "/metrics";
 
+const UPSTREAM_TIMEOUT_MS = (() => {
+  const raw = process.env.UPSTREAM_TIMEOUT_MS;
+  if (raw === undefined || raw === "") return 30_000;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 0) return 30_000;
+  return n;
+})();
+
+const BODY_BUFFER_LIMIT_BYTES = (() => {
+  const raw = process.env.BODY_BUFFER_LIMIT_BYTES;
+  if (raw === undefined || raw === "") return 1 * 1024 * 1024;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return 1 * 1024 * 1024;
+  return n;
+})();
+
 const IS_PKG = Boolean(process.pkg);
 const LAUNCHER_MODE = process.env.LAUNCHER_MODE ? process.env.LAUNCHER_MODE === "1" : IS_PKG;
 const AUTO_OPEN_BROWSER = process.env.AUTO_OPEN_BROWSER ? process.env.AUTO_OPEN_BROWSER === "1" : IS_PKG;
@@ -52,6 +68,27 @@ function isPortFree(port) {
     server.once("error", () => resolve(false));
     server.once("listening", () => server.close(() => resolve(true)));
     server.listen(port);
+  });
+}
+
+function waitForPortListening(port, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve) => {
+    const tryOnce = () => {
+      const sock = net.createConnection({ port, host: "127.0.0.1" });
+      let settled = false;
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        sock.destroy();
+        if (ok) return resolve(true);
+        if (Date.now() >= deadline) return resolve(false);
+        setTimeout(tryOnce, 50);
+      };
+      sock.once("connect", () => finish(true));
+      sock.once("error", () => finish(false));
+    };
+    tryOnce();
   });
 }
 
@@ -274,44 +311,212 @@ function recordUsage({ key, model, path, method, status, durationMs }) {
 
   perKeyUsage.set(id, entry);
   recordSeries({ key, status, durationMs });
+  markStatsDirty();
 }
 
 async function ensureDataDir() {
   await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
 }
 
-async function readState() {
-  await ensureDataDir();
+const STATS_FILE = process.env.STATS_FILE || path.join(path.dirname(DATA_FILE), "stats.json");
+const STATS_FLUSH_DEBOUNCE_MS = 5_000;
+
+let statsFlushTimer = null;
+let statsFlushInFlight = null;
+let statsFlushPending = false;
+
+function serializeStats() {
+  const usage = {};
+  for (const [id, entry] of perKeyUsage.entries()) usage[id] = entry;
+  const series = {};
+  for (const [id, m] of perKeySeries.entries()) {
+    const obj = {};
+    for (const [t, p] of m.entries()) obj[String(t)] = p;
+    series[id] = obj;
+  }
+  return { v: 1, savedAt: Date.now(), usage, series };
+}
+
+async function loadStats() {
+  let parsed;
   try {
-    const raw = await fs.readFile(DATA_FILE, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") throw new Error("invalid_state");
-    if (!Array.isArray(parsed.keys)) parsed.keys = [];
-    parsed.keys.forEach((k) => {
-      if (!k || typeof k !== "object") return;
-      if (k.weight === undefined || k.weight === null) k.weight = 1;
-      k.weight = normalizeWeight(k.weight);
-    });
-    if (typeof parsed.rrIndex !== "number") parsed.rrIndex = 0;
-    if (!parsed.rrIndexByPool || typeof parsed.rrIndexByPool !== "object") parsed.rrIndexByPool = {};
-    if (typeof parsed.version !== "number") parsed.version = 1;
-    return parsed;
-  } catch (e) {
-    const fresh = { version: 1, rrIndex: 0, rrIndexByPool: {}, keys: [] };
-    await writeState(fresh);
-    return fresh;
+    const raw = await fs.readFile(STATS_FILE, "utf8");
+    parsed = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!parsed || typeof parsed !== "object") return;
+
+  const knownIds = new Set((cachedState && Array.isArray(cachedState.keys) ? cachedState.keys : []).map((k) => k.id));
+  const now = Date.now();
+  const windowStart = Math.floor(now / SERIES_BUCKET_MS) * SERIES_BUCKET_MS - SERIES_WINDOW_MINUTES * SERIES_BUCKET_MS;
+
+  if (parsed.usage && typeof parsed.usage === "object") {
+    for (const [id, entry] of Object.entries(parsed.usage)) {
+      if (!entry || typeof entry !== "object") continue;
+      if (knownIds.size && !knownIds.has(id)) continue;
+      if (!entry.statusClassCounts || typeof entry.statusClassCounts !== "object") {
+        entry.statusClassCounts = { "2xx": 0, "3xx": 0, "4xx": 0, "5xx": 0, error: 0 };
+      }
+      perKeyUsage.set(id, entry);
+    }
+  }
+  if (parsed.series && typeof parsed.series === "object") {
+    for (const [id, points] of Object.entries(parsed.series)) {
+      if (!points || typeof points !== "object") continue;
+      if (knownIds.size && !knownIds.has(id)) continue;
+      const m = new Map();
+      for (const [tStr, p] of Object.entries(points)) {
+        const t = Number(tStr);
+        if (!Number.isFinite(t) || t < windowStart) continue;
+        if (!p || typeof p !== "object") continue;
+        m.set(t, p);
+      }
+      if (m.size) perKeySeries.set(id, m);
+    }
   }
 }
 
-async function writeState(state) {
+async function persistStatsNow() {
+  await ensureDataDir();
+  const tmp = `${STATS_FILE}.${crypto.randomUUID()}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(serializeStats()), "utf8");
+  await fs.rename(tmp, STATS_FILE);
+}
+
+function scheduleStatsFlush() {
+  if (statsFlushTimer) return;
+  statsFlushTimer = setTimeout(() => {
+    statsFlushTimer = null;
+    statsFlushPending = false;
+    statsFlushInFlight = persistStatsNow()
+      .catch((err) => {
+        process.stderr.write(`stats flush failed: ${err && err.message ? err.message : err}\n`);
+      })
+      .finally(() => {
+        statsFlushInFlight = null;
+        if (statsFlushPending) scheduleStatsFlush();
+      });
+  }, STATS_FLUSH_DEBOUNCE_MS);
+}
+
+function markStatsDirty() {
+  if (statsFlushInFlight) {
+    statsFlushPending = true;
+    return;
+  }
+  scheduleStatsFlush();
+}
+
+async function flushStatsNow() {
+  if (statsFlushTimer) {
+    clearTimeout(statsFlushTimer);
+    statsFlushTimer = null;
+  }
+  if (statsFlushInFlight) {
+    try { await statsFlushInFlight; } catch {}
+  }
+  await persistStatsNow().catch((err) => {
+    process.stderr.write(`stats flush failed: ${err && err.message ? err.message : err}\n`);
+  });
+}
+
+let cachedState = null;
+let flushTimer = null;
+let flushInFlight = null;
+let flushPending = false;
+const FLUSH_DEBOUNCE_MS = 200;
+
+function defaultState() {
+  return { version: 1, rrIndex: 0, rrIndexByPool: {}, keys: [] };
+}
+
+function normalizeState(parsed) {
+  if (!parsed || typeof parsed !== "object") return defaultState();
+  if (!Array.isArray(parsed.keys)) parsed.keys = [];
+  parsed.keys.forEach((k) => {
+    if (!k || typeof k !== "object") return;
+    if (k.weight === undefined || k.weight === null) k.weight = 1;
+    k.weight = normalizeWeight(k.weight);
+  });
+  if (typeof parsed.rrIndex !== "number") parsed.rrIndex = 0;
+  if (!parsed.rrIndexByPool || typeof parsed.rrIndexByPool !== "object") parsed.rrIndexByPool = {};
+  if (typeof parsed.version !== "number") parsed.version = 1;
+  return parsed;
+}
+
+async function loadState() {
+  await ensureDataDir();
+  try {
+    const raw = await fs.readFile(DATA_FILE, "utf8");
+    cachedState = normalizeState(JSON.parse(raw));
+  } catch {
+    cachedState = defaultState();
+    await persistNow();
+  }
+  return cachedState;
+}
+
+function getState() {
+  if (!cachedState) cachedState = defaultState();
+  return cachedState;
+}
+
+async function persistNow() {
+  if (!cachedState) return;
   await ensureDataDir();
   const tmp = `${DATA_FILE}.${crypto.randomUUID()}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
+  await fs.writeFile(tmp, JSON.stringify(cachedState, null, 2), "utf8");
   await fs.rename(tmp, DATA_FILE);
 }
 
+function scheduleFlush() {
+  if (flushTimer) return;
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    flushPending = false;
+    flushInFlight = persistNow()
+      .catch((err) => {
+        process.stderr.write(`state flush failed: ${err && err.message ? err.message : err}\n`);
+      })
+      .finally(() => {
+        flushInFlight = null;
+        if (flushPending) scheduleFlush();
+      });
+  }, FLUSH_DEBOUNCE_MS);
+}
+
+function markStateDirty() {
+  if (flushInFlight) {
+    flushPending = true;
+    return;
+  }
+  scheduleFlush();
+}
+
+async function flushNow() {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  if (flushInFlight) {
+    try { await flushInFlight; } catch {}
+  }
+  await persistNow().catch((err) => {
+    process.stderr.write(`state flush failed: ${err && err.message ? err.message : err}\n`);
+  });
+}
+
+function isLoopback(req) {
+  const ip = (req.socket && req.socket.remoteAddress) || "";
+  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+}
+
 function requireAdmin(req, res, next) {
-  if (!ADMIN_TOKEN) return next();
+  if (!ADMIN_TOKEN) {
+    if (isLoopback(req)) return next();
+    return res.status(401).json({ error: "admin_token_required" });
+  }
   const token = req.header("x-admin-token") || "";
   if (token === ADMIN_TOKEN) return next();
   return res.status(401).json({ error: "unauthorized" });
@@ -372,25 +577,24 @@ function pickKeyRoundRobin(state, { provider, model }) {
     }
   }
 
-  let soonestKeyIdx = 0;
-  let soonestUntil = Number(pool[0].cooldownUntil || 0);
-  for (let i = 1; i < pool.length; i += 1) {
-    const until = Number(pool[i].cooldownUntil || 0);
-    if (!Number.isFinite(soonestUntil) || (Number.isFinite(until) && until < soonestUntil)) {
-      soonestUntil = until;
-      soonestKeyIdx = i;
-    }
-  }
-
-  const startOffset = weights.slice(0, soonestKeyIdx).reduce((sum, w) => sum + w, 0);
-  perPool[poolId] = (startOffset + weights[soonestKeyIdx]) % totalWeight;
-  state.rrIndexByPool = perPool;
-  state.rrIndex = rrIndex + 1;
-  return pool[soonestKeyIdx];
+  return null;
 }
 
-async function markFailure(keyId, { status }) {
-  const state = await readState();
+function soonestCooldownMs(state, { provider, model }) {
+  const now = Date.now();
+  let soonest = Infinity;
+  for (const k of state.keys) {
+    if (!k.enabled) continue;
+    if (provider && k.provider !== provider) continue;
+    if (model && Array.isArray(k.models) && k.models.length > 0 && !k.models.includes(model)) continue;
+    const until = Number(k.cooldownUntil || 0);
+    if (until > now && until < soonest) soonest = until;
+  }
+  return soonest === Infinity ? 0 : soonest - now;
+}
+
+function markFailure(keyId, { status }) {
+  const state = getState();
   const key = state.keys.find((k) => k.id === keyId);
   if (!key) return;
   key.failures = (key.failures || 0) + 1;
@@ -399,32 +603,82 @@ async function markFailure(keyId, { status }) {
     key.cooldownUntil = Date.now() + cooldownMs;
   }
   key.updatedAt = nowIso();
-  await writeState(state);
+  markStateDirty();
 }
 
-async function markSuccess(keyId) {
-  const state = await readState();
+function markSuccess(keyId) {
+  const state = getState();
   const key = state.keys.find((k) => k.id === keyId);
   if (!key) return;
   key.failures = 0;
   key.cooldownUntil = 0;
   key.updatedAt = nowIso();
-  await writeState(state);
+  markStateDirty();
 }
 
-async function extractModelFromRequest(req) {
-  const contentType = (req.headers["content-type"] || "").toLowerCase();
-  if (!contentType.includes("application/json")) return null;
-  if (!Buffer.isBuffer(req.body)) return null;
+function extractModelFromBuffer(buf, contentType) {
+  if (!contentType || !contentType.toLowerCase().includes("application/json")) return null;
+  if (!Buffer.isBuffer(buf) || buf.length === 0) return null;
   try {
-    const parsed = JSON.parse(req.body.toString("utf8"));
+    const parsed = JSON.parse(buf.toString("utf8"));
     return parsed && typeof parsed === "object" ? parsed.model || null : null;
   } catch {
-    return null;
+    const text = buf.toString("utf8", 0, Math.min(buf.length, 8192));
+    const m = text.match(/"model"\s*:\s*"([^"]+)"/);
+    return m ? m[1] : null;
   }
 }
 
-async function fetchUpstream({ req, key, originalPathAndQuery }) {
+function captureRequestBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    let done = false;
+
+    const cleanup = () => {
+      req.off("data", onData);
+      req.off("end", onEnd);
+      req.off("error", onErr);
+    };
+    const onData = (chunk) => {
+      if (done) return;
+      chunks.push(chunk);
+      size += chunk.length;
+      if (size >= limit) {
+        done = true;
+        req.pause();
+        cleanup();
+        resolve({ prefix: Buffer.concat(chunks, size), full: false });
+      }
+    };
+    const onEnd = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve({ prefix: Buffer.concat(chunks, size), full: true });
+    };
+    const onErr = (err) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(err);
+    };
+
+    req.on("data", onData);
+    req.on("end", onEnd);
+    req.on("error", onErr);
+  });
+}
+
+async function* streamPrefixThenReq(prefix, req) {
+  if (prefix && prefix.length) yield prefix;
+  if (typeof req.isPaused === "function" && req.isPaused()) req.resume();
+  for await (const chunk of req) {
+    yield chunk;
+  }
+}
+
+async function fetchUpstream({ req, key, originalPathAndQuery, captured }) {
   const upstreamPath = rewritePathForProvider(key.provider, originalPathAndQuery);
   const upstreamUrl = safeJoinUrl(key.baseUrl, upstreamPath);
 
@@ -444,7 +698,19 @@ async function fetchUpstream({ req, key, originalPathAndQuery }) {
   };
 
   if (req.method !== "GET" && req.method !== "HEAD") {
-    init.body = req.body;
+    if (captured && captured.full) {
+      init.body = captured.prefix;
+    } else if (captured) {
+      init.body = streamPrefixThenReq(captured.prefix, req);
+      init.duplex = "half";
+    }
+  }
+
+  let timer = null;
+  if (UPSTREAM_TIMEOUT_MS > 0) {
+    const ctrl = new AbortController();
+    init.signal = ctrl.signal;
+    timer = setTimeout(() => ctrl.abort(), UPSTREAM_TIMEOUT_MS);
   }
 
   try {
@@ -452,8 +718,13 @@ async function fetchUpstream({ req, key, originalPathAndQuery }) {
   } catch (err) {
     if (err && typeof err === "object") {
       err.upstreamUrl = upstreamUrl;
+      if (err.name === "AbortError" && !err.code) {
+        err.code = "UPSTREAM_TIMEOUT";
+      }
     }
     throw err;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -520,8 +791,14 @@ app.post("/launcher/start", express.json({ limit: "20kb" }), async (req, res) =>
   const child = spawn(command, args, { env, detached: true, stdio: "ignore" });
   child.unref();
 
+  const ready = await waitForPortListening(port, 5000);
+  if (!ready) {
+    try { child.kill("SIGTERM"); } catch {}
+    return res.status(504).json({ error: "child_not_ready" });
+  }
+
   res.json({ ok: true, url: `http://localhost:${port}/` });
-  setTimeout(() => process.exit(0), 700);
+  setTimeout(() => process.exit(0), 200);
 });
 
 app.get("/", (req, res, next) => {
@@ -625,8 +902,8 @@ app.get("/admin/presets", requireAdmin, (req, res) => {
   res.json({ presets: PRESETS });
 });
 
-app.get("/admin/keys", requireAdmin, async (req, res) => {
-  const state = await readState();
+app.get("/admin/keys", requireAdmin, (req, res) => {
+  const state = getState();
   const keys = state.keys.map((k) => ({
     ...k,
     apiKeyMasked: maskKey(k.apiKey),
@@ -635,8 +912,8 @@ app.get("/admin/keys", requireAdmin, async (req, res) => {
   res.json({ keys });
 });
 
-app.get("/admin/stats", requireAdmin, async (req, res) => {
-  const state = await readState();
+app.get("/admin/stats", requireAdmin, (req, res) => {
+  const state = getState();
   const byId = {};
   state.keys.forEach((k) => {
     byId[k.id] = {
@@ -696,8 +973,8 @@ app.get("/admin/stats", requireAdmin, async (req, res) => {
   res.json({ items });
 });
 
-app.get("/admin/timeseries", requireAdmin, async (req, res) => {
-  const state = await readState();
+app.get("/admin/timeseries", requireAdmin, (req, res) => {
+  const state = getState();
   const now = Date.now();
   const bucket = Math.floor(now / SERIES_BUCKET_MS) * SERIES_BUCKET_MS;
   const windowStart = bucket - SERIES_WINDOW_MINUTES * SERIES_BUCKET_MS;
@@ -750,7 +1027,7 @@ app.post("/admin/keys", requireAdmin, async (req, res) => {
   if (!normalizedBaseUrl) return res.status(400).json({ error: "baseUrl_invalid" });
   const normalizedWeight = normalizeWeight(weight);
 
-  const state = await readState();
+  const state = getState();
   const id = crypto.randomUUID();
   const createdAt = nowIso();
   const record = {
@@ -768,14 +1045,14 @@ app.post("/admin/keys", requireAdmin, async (req, res) => {
     updatedAt: createdAt
   };
   state.keys.push(record);
-  await writeState(state);
+  await flushNow();
   res.json({ id });
 });
 
 app.put("/admin/keys/:id", requireAdmin, async (req, res) => {
   const id = req.params.id;
   const { name, provider, apiKey, baseUrl, models, enabled, weight } = req.body || {};
-  const state = await readState();
+  const state = getState();
   const key = state.keys.find((k) => k.id === id);
   if (!key) return res.status(404).json({ error: "not_found" });
 
@@ -798,20 +1075,21 @@ app.put("/admin/keys/:id", requireAdmin, async (req, res) => {
   if (typeof enabled === "boolean") key.enabled = enabled;
   if (weight !== undefined) key.weight = normalizeWeight(weight);
   key.updatedAt = nowIso();
-  await writeState(state);
+  await flushNow();
   res.json({ ok: true });
 });
 
 app.delete("/admin/keys/:id", requireAdmin, async (req, res) => {
   const id = req.params.id;
-  const state = await readState();
+  const state = getState();
   const before = state.keys.length;
   const removed = state.keys.find((k) => k.id === id) || null;
   state.keys = state.keys.filter((k) => k.id !== id);
   if (state.keys.length === before) return res.status(404).json({ error: "not_found" });
-  await writeState(state);
+  await flushNow();
   perKeyUsage.delete(id);
   perKeySeries.delete(id);
+  markStatsDirty();
   if (removed) {
     try {
       metricKeyCooldown.remove(removed.provider, removed.id, removed.name);
@@ -820,42 +1098,28 @@ app.delete("/admin/keys/:id", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
-function sendPublicFile(res, fileName) {
-  const filePath = path.join(PUBLIC_DIR, fileName);
-  const ext = path.extname(fileName).toLowerCase();
-  const contentType =
-    ext === ".html"
-      ? "text/html; charset=utf-8"
-      : ext === ".js"
-        ? "application/javascript; charset=utf-8"
-        : ext === ".css"
-          ? "text/css; charset=utf-8"
-          : "application/octet-stream";
-  const data = fsSync.readFileSync(filePath);
-  res.setHeader("Content-Type", contentType);
-  res.setHeader("Cache-Control", "no-store");
-  res.end(data);
-}
-
-app.get(["/", "/index.html", "/app.js", "/styles.css"], (req, res, next) => {
-  if (runtimeMode === "launcher" && req.path === "/") return next();
-  const name = req.path === "/" ? "index.html" : req.path.slice(1);
-  try {
-    sendPublicFile(res, name);
-  } catch {
-    return next();
-  }
-});
-
-app.use(express.static(PUBLIC_DIR));
-
-app.use("/v1", express.raw({ type: "*/*", limit: "20mb" }));
-app.use("/", express.raw({ type: "*/*", limit: "20mb" }));
+app.use(
+  express.static(PUBLIC_DIR, {
+    index: "index.html",
+    setHeaders: (res) => res.setHeader("Cache-Control", "no-store")
+  })
+);
 
 app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
-  const state = await readState();
+  const state = getState();
 
-  const requestedModel = await extractModelFromRequest(req);
+  const hasBody = req.method !== "GET" && req.method !== "HEAD";
+  let captured = null;
+  if (hasBody) {
+    try {
+      captured = await captureRequestBody(req, BODY_BUFFER_LIMIT_BYTES);
+    } catch (err) {
+      return res.status(400).json({ error: "request_body_read_failed", message: String(err && err.message ? err.message : err) });
+    }
+  }
+
+  const contentType = req.headers["content-type"] || "";
+  const requestedModel = captured ? extractModelFromBuffer(captured.prefix, contentType) : null;
   const requestedProvider =
     (req.header("x-llm-provider") || "").trim().toLowerCase() || guessProviderFromModel(requestedModel);
 
@@ -875,16 +1139,25 @@ app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
     if (requestedModel && Array.isArray(k.models) && k.models.length > 0 && !k.models.includes(requestedModel)) return false;
     return true;
   });
-  const attempts = Math.max(1, poolKeys.length);
+  const isStreaming = !!(captured && !captured.full);
+  const attempts = isStreaming ? 1 : Math.max(1, poolKeys.length);
   let lastStatus = 502;
   let lastErrorInfo = null;
 
   for (let i = 0; i < attempts; i += 1) {
     const chosen = pickKeyRoundRobin(state, { provider, model: requestedModel });
-    await writeState(state);
+    markStateDirty();
 
     if (!chosen) {
-      return res.status(503).json({ error: "no_available_apikey", provider, model: requestedModel || null });
+      const retryMs = soonestCooldownMs(state, { provider, model: requestedModel });
+      const error = retryMs > 0 ? "all_keys_cooling_down" : "no_available_apikey";
+      if (retryMs > 0) res.setHeader("Retry-After", String(Math.max(1, Math.ceil(retryMs / 1000))));
+      return res.status(503).json({
+        error,
+        provider,
+        model: requestedModel || null,
+        retry_after_ms: retryMs > 0 ? retryMs : undefined
+      });
     }
 
     const labelsBase = {
@@ -900,7 +1173,7 @@ app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
     metricInFlight.inc({ provider: labelsBase.provider, key_id: labelsBase.key_id, key_name: labelsBase.key_name });
 
     try {
-      const upstreamRes = await fetchUpstream({ req, key: chosen, originalPathAndQuery });
+      const upstreamRes = await fetchUpstream({ req, key: chosen, originalPathAndQuery, captured });
       lastStatus = upstreamRes.status || 502;
       const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
 
@@ -999,6 +1272,8 @@ async function startMain() {
   runtimeMode = "main";
   launcherReason = null;
   try {
+    await loadState();
+    await loadStats();
     const server = await listenAsync(PORT);
     runtimeListenPort = PORT;
     const url = `http://localhost:${PORT}/`;
@@ -1015,6 +1290,19 @@ async function startMain() {
     process.exit(1);
   }
 }
+
+let shuttingDown = false;
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    await Promise.allSettled([flushNow(), flushStatsNow()]);
+  } finally {
+    process.exit(signal === "SIGTERM" || signal === "SIGINT" ? 0 : 1);
+  }
+}
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 if (LAUNCHER_MODE) startLauncher(null).catch((e) => (process.stderr.write(String(e && e.stack ? e.stack : e) + "\n"), process.exit(1)));
 else startMain();
