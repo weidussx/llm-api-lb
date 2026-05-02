@@ -444,21 +444,20 @@ function pickKeyRoundRobin(state, { provider, model }) {
     }
   }
 
-  let soonestKeyIdx = 0;
-  let soonestUntil = Number(pool[0].cooldownUntil || 0);
-  for (let i = 1; i < pool.length; i += 1) {
-    const until = Number(pool[i].cooldownUntil || 0);
-    if (!Number.isFinite(soonestUntil) || (Number.isFinite(until) && until < soonestUntil)) {
-      soonestUntil = until;
-      soonestKeyIdx = i;
-    }
-  }
+  return null;
+}
 
-  const startOffset = weights.slice(0, soonestKeyIdx).reduce((sum, w) => sum + w, 0);
-  perPool[poolId] = (startOffset + weights[soonestKeyIdx]) % totalWeight;
-  state.rrIndexByPool = perPool;
-  state.rrIndex = rrIndex + 1;
-  return pool[soonestKeyIdx];
+function soonestCooldownMs(state, { provider, model }) {
+  const now = Date.now();
+  let soonest = Infinity;
+  for (const k of state.keys) {
+    if (!k.enabled) continue;
+    if (provider && k.provider !== provider) continue;
+    if (model && Array.isArray(k.models) && k.models.length > 0 && !k.models.includes(model)) continue;
+    const until = Number(k.cooldownUntil || 0);
+    if (until > now && until < soonest) soonest = until;
+  }
+  return soonest === Infinity ? 0 : soonest - now;
 }
 
 function markFailure(keyId, { status }) {
@@ -904,37 +903,14 @@ app.delete("/admin/keys/:id", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
-function sendPublicFile(res, fileName) {
-  const filePath = path.join(PUBLIC_DIR, fileName);
-  const ext = path.extname(fileName).toLowerCase();
-  const contentType =
-    ext === ".html"
-      ? "text/html; charset=utf-8"
-      : ext === ".js"
-        ? "application/javascript; charset=utf-8"
-        : ext === ".css"
-          ? "text/css; charset=utf-8"
-          : "application/octet-stream";
-  const data = fsSync.readFileSync(filePath);
-  res.setHeader("Content-Type", contentType);
-  res.setHeader("Cache-Control", "no-store");
-  res.end(data);
-}
+app.use(
+  express.static(PUBLIC_DIR, {
+    index: "index.html",
+    setHeaders: (res) => res.setHeader("Cache-Control", "no-store")
+  })
+);
 
-app.get(["/", "/index.html", "/app.js", "/styles.css"], (req, res, next) => {
-  if (runtimeMode === "launcher" && req.path === "/") return next();
-  const name = req.path === "/" ? "index.html" : req.path.slice(1);
-  try {
-    sendPublicFile(res, name);
-  } catch {
-    return next();
-  }
-});
-
-app.use(express.static(PUBLIC_DIR));
-
-app.use("/v1", express.raw({ type: "*/*", limit: "20mb" }));
-app.use("/", express.raw({ type: "*/*", limit: "20mb" }));
+app.use(express.raw({ type: "*/*", limit: "20mb" }));
 
 app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
   const state = getState();
@@ -968,7 +944,15 @@ app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
     markStateDirty();
 
     if (!chosen) {
-      return res.status(503).json({ error: "no_available_apikey", provider, model: requestedModel || null });
+      const retryMs = soonestCooldownMs(state, { provider, model: requestedModel });
+      const error = retryMs > 0 ? "all_keys_cooling_down" : "no_available_apikey";
+      if (retryMs > 0) res.setHeader("Retry-After", String(Math.max(1, Math.ceil(retryMs / 1000))));
+      return res.status(503).json({
+        error,
+        provider,
+        model: requestedModel || null,
+        retry_after_ms: retryMs > 0 ? retryMs : undefined
+      });
     }
 
     const labelsBase = {
