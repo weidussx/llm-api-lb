@@ -15,8 +15,6 @@
 - On-disk schema for `state.json` unchanged. New `stats.json` introduced and documented.
 
 ## Next Steps
-- Open candidates not yet addressed in PR #1:
-  - **#10** Treat 401/403 as hard-disable + UI badge instead of 10-min cooldown loop. Requires a new `disabledReason` field on keys + frontend tweak.
 - Dead code: `server.js:16 const INSTANCE_ID` reads the wrong env var name (`LLM_KEY_LB_INSTANCE_ID`) and is never referenced. Safe to delete.
 
 ## Body handling (post-PR #1)

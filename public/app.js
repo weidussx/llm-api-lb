@@ -166,6 +166,9 @@ const I18N = {
     "status.disabled": "禁用",
     "status.ok": "正常 (fail={failures})",
     "status.cooldown": "冷却中 {seconds}s (fail={failures})",
+    "status.authFailed": "认证失败",
+    "status.authFailedHint": "上游返回 401/403，已停止轮询此 Key。修改 apiKey 后会自动恢复，或点击解除禁用。",
+    "btn.clearDisable": "解除禁用",
 
     "prompt.adminToken": "输入 ADMIN_TOKEN（未设置则留空）",
     "prompt.delete": "删除 {name} ?",
@@ -296,6 +299,9 @@ const I18N = {
     "status.disabled": "Disabled",
     "status.ok": "OK (fail={failures})",
     "status.cooldown": "Cooling down {seconds}s (fail={failures})",
+    "status.authFailed": "Auth failed",
+    "status.authFailedHint": "Upstream returned 401/403. This key is parked out of rotation. Updating apiKey clears it automatically, or click Clear disable.",
+    "btn.clearDisable": "Clear disable",
 
     "prompt.adminToken": "Enter ADMIN_TOKEN (leave empty if not set)",
     "prompt.delete": "Delete {name} ?",
@@ -1021,14 +1027,39 @@ function renderKeys(keys, presets) {
       [t("btn.edit")]
     );
 
-    const statusText = enabled
-      ? cooldown
-        ? t("status.cooldown", { seconds: cooldown, failures: k.failures || 0 })
-        : t("status.ok", { failures: k.failures || 0 })
-      : t("status.disabled");
+    const authFailed = k.disabledReason === "auth_failed";
+    const statusCell = authFailed
+      ? el("span", { class: "badge badgeAuthFail", title: t("status.authFailedHint") }, [t("status.authFailed")])
+      : enabled
+        ? cooldown
+          ? t("status.cooldown", { seconds: cooldown, failures: k.failures || 0 })
+          : t("status.ok", { failures: k.failures || 0 })
+        : t("status.disabled");
+
+    const rowActions = [btnEdit];
+    if (authFailed) {
+      rowActions.push(
+        el(
+          "button",
+          {
+            class: "secondary",
+            onclick: async () => {
+              await api(`/admin/keys/${k.id}`, {
+                method: "PUT",
+                headers: headers(),
+                body: JSON.stringify({ disabledReason: null })
+              });
+              await refreshAll();
+            }
+          },
+          [t("btn.clearDisable")]
+        )
+      );
+    }
+    rowActions.push(btnToggle, btnDelete);
 
     tbody.appendChild(
-      el("tr", {}, [
+      el("tr", { class: authFailed ? "rowAuthFail" : "" }, [
         el("td", {}, [k.name]),
         el("td", {}, [providerLabel]),
         el("td", { class: "colBaseUrl" }, [
@@ -1037,8 +1068,8 @@ function renderKeys(keys, presets) {
         el("td", {}, [(k.models || []).join(",") || t("models.all")]),
         el("td", {}, [String(k.weight || 1)]),
         el("td", {}, [k.apiKeyMasked || ""]),
-        el("td", {}, [statusText]),
-        el("td", { class: "rowActions" }, [btnEdit, btnToggle, btnDelete])
+        el("td", {}, [statusCell]),
+        el("td", { class: "rowActions" }, rowActions)
       ])
     );
   });

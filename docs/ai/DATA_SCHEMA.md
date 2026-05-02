@@ -26,6 +26,7 @@ Atomic write: `tmp` + `rename`. In-memory singleton in the running process; muta
       "enabled":       true,
       "failures":      0,               // consecutive failure count, reset on success
       "cooldownUntil": 0,               // epoch ms, 0 means active
+      "disabledReason": null,           // null | "auth_failed" — see Cooldown semantics
       "createdAt":     "ISO-8601",
       "updatedAt":     "ISO-8601"
     }
@@ -41,18 +42,21 @@ Atomic write: `tmp` + `rename`. In-memory singleton in the running process; muta
 - `cooldownUntil` is wall-clock ms (`Date.now()` units). It is honored relative to current time at pick. Restarting the process does not zero it.
 - Missing `rrIndex`, `rrIndexByPool`, `keys`, or `version` are tolerated and defaulted on load.
 
-### Cooldown semantics
+### Cooldown / disable semantics
 
-Cooldown duration computed by `computeCooldownMs(status, failures)`:
+| Upstream status      | Action                                                              |
+|----------------------|---------------------------------------------------------------------|
+| 200–399              | `markSuccess`: zero `failures`, clear `cooldownUntil` (no change to `disabledReason`) |
+| 429                  | `cooldownUntil = now + 45 s`                                        |
+| **401, 403**         | **`disabledReason = "auth_failed"`, `cooldownUntil = 0` (out of pool until manual reset)** |
+| ≥ 500                | `cooldownUntil = now + 10 s`                                        |
+| 4xx (other)          | `failures++` only, no cooldown                                      |
+| network error / null | `cooldownUntil = now + 20 s`                                        |
 
-| Upstream status   | Cooldown |
-|-------------------|----------|
-| 429               | 45 s     |
-| 401, 403          | 600 s    |
-| ≥ 500             | 10 s     |
-| network error / null | 20 s  |
-
-`shouldCooldownOnStatus` decides whether to cool at all (true for `null`, 429, 401, 403, 5xx).
+Hard-disable recovery:
+- `PUT /admin/keys/:id` with `{ "apiKey": "<new>" }` where the value differs from current → auto-clears `disabledReason`, `failures`, `cooldownUntil`.
+- `PUT /admin/keys/:id` with `{ "disabledReason": null }` → explicit clear.
+- Toggling `enabled` (false → true) does **not** clear `disabledReason`. The user must replace the key or explicitly clear.
 
 ## stats.json
 
