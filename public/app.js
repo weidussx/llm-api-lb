@@ -61,12 +61,33 @@ const I18N = {
     "btn.lang.zh": "中文",
     "btn.lang.en": "EN",
     "btn.setToken": "设置管理令牌",
+    "btn.help": "帮助",
     "btn.refresh": "刷新",
     "btn.add": "添加",
     "btn.edit": "编辑",
     "btn.enable": "启用",
     "btn.disable": "禁用",
     "btn.delete": "删除",
+    "btn.deleteConfirm": "确认删除",
+    "btn.cancel": "取消",
+    "btn.save": "保存",
+
+    "help.endpoints": "- 管理界面：http://localhost:8787/\n- 健康检查：http://localhost:8787/health\n- OpenAI 兼容入口：http://localhost:8787/v1\n- Prometheus 指标：http://localhost:8787/metrics",
+    "help.model": "- 建议留空：让其他 app 在请求里自行指定 model（更灵活）。\n- 只有需要限制该 Key 只能用于某些模型时，才在这里设置 Model。",
+    "help.weight": "- 默认 1。\n- 权重越大，在同一 provider/model 池里被选中的次数越多。\n- 建议按各家 RPM/TPM 或稳定性来调。",
+    "modal.edit.title": "编辑 Key",
+    "modal.token.title": "设置管理令牌",
+    "modal.field.name": "名称",
+    "modal.field.baseUrl": "Base URL",
+    "modal.field.models": "Models(逗号分隔,留空=全模型)",
+    "modal.field.apiKey": "API Key",
+    "modal.field.adminToken": "ADMIN_TOKEN",
+    "modal.field.weight": "轮询权重",
+    "modal.ph.apiKeyKeep": "留空=不改",
+    "modal.ph.weight": "默认 1",
+    "modal.token.desc": "ADMIN_TOKEN 用于保护 /admin/* 管理接口。\n当服务端设置了环境变量 ADMIN_TOKEN 后，所有管理接口必须携带请求头：x-admin-token: <ADMIN_TOKEN> 才能访问。",
+    "modal.token.note": "这里设置的令牌只保存在本机（浏览器/应用的 localStorage），不会上传，也不会写入状态文件。\n留空并保存 = 清除本机保存的令牌。",
+    "modal.token.example": "示例（命令行调用管理接口）：\ncurl -H \"x-admin-token: <ADMIN_TOKEN>\" http://localhost:8787/admin/keys",
 
     "section.launcher": "启动",
     "launcher.desc": "设置端口并启动服务（默认 8787）。",
@@ -109,12 +130,14 @@ const I18N = {
     "form.model": "Model（留空表示全模型）",
     "form.modelCustom": "自定义 Model",
     "form.apiKey": "API Key",
+    "form.weight": "轮询权重",
     "form.enabled": "启用",
 
     "ph.name": "可选，便于区分",
     "ph.baseUrl": "例如 https://api.openai.com/v1",
     "ph.modelCustom": "例如 gpt-4o-mini",
     "ph.apiKey": "必填",
+    "ph.weight": "默认 1",
 
     "provider.openai": "OpenAI",
     "provider.gemini": "Gemini (OpenAI 兼容)",
@@ -135,6 +158,7 @@ const I18N = {
     "table.provider": "厂商",
     "table.baseUrl": "Base URL",
     "table.models": "Model",
+    "table.weight": "权重",
     "table.key": "Key",
     "table.status": "状态",
     "table.actions": "操作",
@@ -152,6 +176,11 @@ const I18N = {
 
     "msg.addOk": "添加成功",
     "msg.addFail": "添加失败：{message}",
+    "msg.editOk": "更新成功",
+    "msg.editFail": "更新失败：{message}",
+    "msg.deleteOk": "删除成功",
+    "msg.deleteConfirm": "再次点击“确认删除”以删除 {name}",
+    "msg.deleteFail": "删除失败：{message}",
     "msg.loadFail": "加载失败：{message}"
   },
   en: {
@@ -162,12 +191,33 @@ const I18N = {
     "btn.lang.zh": "中文",
     "btn.lang.en": "EN",
     "btn.setToken": "Set admin token",
+    "btn.help": "Help",
     "btn.refresh": "Refresh",
     "btn.add": "Add",
     "btn.edit": "Edit",
     "btn.enable": "Enable",
     "btn.disable": "Disable",
     "btn.delete": "Delete",
+    "btn.deleteConfirm": "Confirm delete",
+    "btn.cancel": "Cancel",
+    "btn.save": "Save",
+
+    "help.endpoints": "- UI: http://localhost:8787/\n- Health: http://localhost:8787/health\n- OpenAI-compatible API: http://localhost:8787/v1\n- Prometheus metrics: http://localhost:8787/metrics",
+    "help.model": "- Keep this empty if you want apps to choose models per request.\n- Set model(s) here only if you want to restrict which models this key can use.",
+    "help.weight": "- Default is 1.\n- Higher weight = selected more often within the same provider/model pool.\n- Tune based on each upstream's rate limits or stability.",
+    "modal.edit.title": "Edit key",
+    "modal.token.title": "Set admin token",
+    "modal.field.name": "Name",
+    "modal.field.baseUrl": "Base URL",
+    "modal.field.models": "Models (comma-separated, empty = all)",
+    "modal.field.apiKey": "API Key",
+    "modal.field.adminToken": "ADMIN_TOKEN",
+    "modal.field.weight": "Weight",
+    "modal.ph.apiKeyKeep": "Empty = keep unchanged",
+    "modal.ph.weight": "Default 1",
+    "modal.token.desc": "ADMIN_TOKEN protects /admin/* management endpoints.\nIf the server sets env ADMIN_TOKEN, admin APIs require header: x-admin-token: <ADMIN_TOKEN>.",
+    "modal.token.note": "This token is stored locally (browser/app localStorage) only. It is not uploaded and not written to the state file.\nSave empty = clear the local token.",
+    "modal.token.example": "Example (call admin API from CLI):\ncurl -H \"x-admin-token: <ADMIN_TOKEN>\" http://localhost:8787/admin/keys",
 
     "section.launcher": "Start",
     "launcher.desc": "Choose a port and start the service (default 8787).",
@@ -210,12 +260,14 @@ const I18N = {
     "form.model": "Model (empty = all models)",
     "form.modelCustom": "Custom model",
     "form.apiKey": "API Key",
+    "form.weight": "Weight",
     "form.enabled": "Enabled",
 
     "ph.name": "Optional, for distinguishing keys",
     "ph.baseUrl": "e.g. https://api.openai.com/v1",
     "ph.modelCustom": "e.g. gpt-4o-mini",
     "ph.apiKey": "Required",
+    "ph.weight": "Default 1",
 
     "provider.openai": "OpenAI",
     "provider.gemini": "Gemini (OpenAI-compatible)",
@@ -236,6 +288,7 @@ const I18N = {
     "table.provider": "Provider",
     "table.baseUrl": "Base URL",
     "table.models": "Model",
+    "table.weight": "Weight",
     "table.key": "Key",
     "table.status": "Status",
     "table.actions": "Actions",
@@ -253,6 +306,11 @@ const I18N = {
 
     "msg.addOk": "Added",
     "msg.addFail": "Add failed: {message}",
+    "msg.editOk": "Updated",
+    "msg.editFail": "Update failed: {message}",
+    "msg.deleteOk": "Deleted",
+    "msg.deleteConfirm": "Click “Confirm delete” again to delete {name}",
+    "msg.deleteFail": "Delete failed: {message}",
     "msg.loadFail": "Load failed: {message}"
   }
 };
@@ -300,7 +358,7 @@ function headers() {
 }
 
 async function api(path, init = {}) {
-  const res = await fetch(path, init);
+  const res = await fetch(path, { cache: "no-store", ...init });
   const text = await res.text();
   let data = null;
   try {
@@ -328,6 +386,158 @@ function el(tag, attrs = {}, children = []) {
   });
   children.forEach((c) => n.appendChild(typeof c === "string" ? document.createTextNode(c) : c));
   return n;
+}
+
+function getModalEls() {
+  return {
+    overlay: document.getElementById("modalOverlay"),
+    title: document.getElementById("modalTitle"),
+    body: document.getElementById("modalBody"),
+    hint: document.getElementById("modalHint"),
+    btnOk: document.getElementById("modalOk"),
+    btnCancel: document.getElementById("modalCancel"),
+    btnClose: document.getElementById("modalClose")
+  };
+}
+
+function closeModal() {
+  const m = getModalEls();
+  if (!m.overlay) return;
+  m.overlay.style.display = "none";
+  m.overlay.setAttribute("aria-hidden", "true");
+  if (m.title) m.title.removeAttribute("data-i18n");
+  if (m.body) m.body.innerHTML = "";
+  if (m.hint) {
+    m.hint.textContent = "";
+    m.hint.classList.remove("error");
+  }
+  if (m.btnOk) m.btnOk.disabled = false;
+}
+
+function openModal({ titleKey, bodyNodes, onOk, closeOnBackdrop = false }) {
+  const m = getModalEls();
+  if (!m.overlay || !m.title || !m.body || !m.btnOk || !m.btnCancel || !m.btnClose) return;
+
+  m.title.setAttribute("data-i18n", titleKey);
+  m.btnOk.setAttribute("data-i18n", "btn.save");
+  m.btnCancel.setAttribute("data-i18n", "btn.cancel");
+
+  m.body.innerHTML = "";
+  (bodyNodes || []).forEach((n) => m.body.appendChild(n));
+
+  if (m.hint) {
+    m.hint.textContent = "";
+    m.hint.classList.remove("error");
+  }
+
+  m.overlay.style.display = "";
+  m.overlay.setAttribute("aria-hidden", "false");
+  applyI18n();
+
+  const firstInput = m.body.querySelector("input,textarea,select");
+  if (firstInput && typeof firstInput.focus === "function") firstInput.focus();
+
+  m.overlay.onclick = (e) => {
+    if (closeOnBackdrop && e.target === m.overlay) closeModal();
+  };
+  m.btnCancel.onclick = () => closeModal();
+  m.btnClose.onclick = () => closeModal();
+  m.btnOk.onclick = async () => {
+    if (typeof onOk !== "function") {
+      closeModal();
+      return;
+    }
+    m.btnOk.disabled = true;
+    try {
+      await onOk();
+    } finally {
+      m.btnOk.disabled = false;
+    }
+  };
+}
+
+function openEditKeyModal({ key, hint, onDone }) {
+  const inputName = el("input");
+  inputName.value = key && key.name ? String(key.name) : "";
+
+  const inputBaseUrl = el("input");
+  inputBaseUrl.value = key && key.baseUrl ? String(key.baseUrl) : "";
+
+  const inputModels = el("input");
+  inputModels.value = key && Array.isArray(key.models) ? key.models.join(",") : "";
+
+  const inputWeight = el("input", { type: "number", min: "1", step: "1", inputmode: "numeric", "data-i18n-placeholder": "modal.ph.weight" });
+  inputWeight.value = key && key.weight ? String(key.weight) : "1";
+
+  const inputApiKey = el("input", { type: "password", "data-i18n-placeholder": "modal.ph.apiKeyKeep" });
+
+  openModal({
+    titleKey: "modal.edit.title",
+    bodyNodes: [
+      el("label", {}, [el("span", { "data-i18n": "modal.field.name" }), inputName]),
+      el("label", {}, [el("span", { "data-i18n": "modal.field.baseUrl" }), inputBaseUrl]),
+      el("label", {}, [el("span", { "data-i18n": "modal.field.models" }), inputModels]),
+      el("label", {}, [el("span", { "data-i18n": "modal.field.weight" }), inputWeight]),
+      el("label", {}, [el("span", { "data-i18n": "modal.field.apiKey" }), inputApiKey])
+    ],
+    onOk: async () => {
+      const m = getModalEls();
+      if (m.hint) {
+        m.hint.textContent = "";
+        m.hint.classList.remove("error");
+      }
+      try {
+        await api(`/admin/keys/${key.id}`, {
+          method: "PUT",
+          headers: headers(),
+          body: JSON.stringify({
+            name: inputName.value,
+            baseUrl: inputBaseUrl.value,
+            models: splitModels(inputModels.value),
+            weight: inputWeight.value,
+            apiKey: inputApiKey.value
+          })
+        });
+        closeModal();
+        if (hint) {
+          hint.textContent = t("msg.editOk");
+          hint.classList.remove("error");
+        }
+        if (typeof onDone === "function") await onDone();
+      } catch (e) {
+        if (m.hint) {
+          m.hint.textContent = t("msg.editFail", { message: e.message });
+          m.hint.classList.add("error");
+        }
+      }
+    }
+  });
+}
+
+function openAdminTokenModal({ onDone } = {}) {
+  const cur = getAdminToken();
+  const inputToken = el("input");
+  inputToken.value = cur;
+
+  openModal({
+    titleKey: "modal.token.title",
+    bodyNodes: [
+      el("div", { class: "modalNote", "data-i18n": "modal.token.desc" }),
+      el("label", {}, [el("span", { "data-i18n": "modal.field.adminToken" }), inputToken]),
+      el("div", { class: "modalNote", "data-i18n": "modal.token.note" }),
+      el("pre", { class: "codeBox", "data-i18n": "modal.token.example" })
+    ],
+    onOk: async () => {
+      const m = getModalEls();
+      if (m.hint) {
+        m.hint.textContent = "";
+        m.hint.classList.remove("error");
+      }
+      setAdminToken((inputToken.value || "").trim());
+      closeModal();
+      if (typeof onDone === "function") await onDone();
+    }
+  });
 }
 
 function splitModels(raw) {
@@ -540,14 +750,26 @@ function renderChart(timeseries, { showBars, showLine }) {
       let stack = 0;
       series.forEach((s) => {
         const p = s.points[idx];
-        const c = p ? p.count || 0 : 0;
-        if (!c) return;
-        const x = padding.left + idx * barW + 1;
-        const h = (c / maxCount) * plotH;
-        const y = padding.top + plotH - h - stack;
+        const success = p ? p.success || 0 : 0;
+        const failure = p ? p.failure || 0 : 0;
+        if (!success && !failure) return;
+
         const color = colorForKeyId(s.id);
-        svg.appendChild(svgEl("rect", { x, y, width: Math.max(1, barW - 2), height: h, fill: color, opacity: 0.85 }));
-        stack += h;
+        const w = Math.max(1, barW - 2);
+
+        if (success > 0) {
+          const h = (success / maxCount) * plotH;
+          const y = padding.top + plotH - h - stack;
+          svg.appendChild(svgEl("rect", { x: padding.left + idx * barW + 1, y, width: w, height: h, fill: color, opacity: 0.3 }));
+          stack += h;
+        }
+
+        if (failure > 0) {
+          const h = (failure / maxCount) * plotH;
+          const y = padding.top + plotH - h - stack;
+          svg.appendChild(svgEl("rect", { x: padding.left + idx * barW + 1, y, width: w, height: h, fill: color, opacity: 1.0 }));
+          stack += h;
+        }
       });
     }
   }
@@ -687,13 +909,18 @@ function applyPresetToForm(presets, provider) {
 
 function renderKeys(keys, presets) {
   const root = document.getElementById("keys");
+  const hint = document.getElementById("keysHint");
   if (!keys.length) {
     root.innerHTML = "";
     root.appendChild(el("div", { class: "muted" }, [t("keys.empty")]));
+    if (hint) {
+      hint.textContent = "";
+      hint.classList.remove("error");
+    }
     return;
   }
 
-  const table = el("table", { class: "table" });
+  const table = el("table", { class: "table keysTable" });
   table.appendChild(
     el("thead", {}, [
       el("tr", {}, [
@@ -701,6 +928,7 @@ function renderKeys(keys, presets) {
         el("th", {}, [t("table.provider")]),
         el("th", {}, [t("table.baseUrl")]),
         el("th", {}, [t("table.models")]),
+        el("th", {}, [t("table.weight")]),
         el("th", {}, [t("table.key")]),
         el("th", {}, [t("table.status")]),
         el("th", {}, [t("table.actions")])
@@ -740,9 +968,43 @@ function renderKeys(keys, presets) {
       {
         class: "danger",
         onclick: async () => {
-          if (!confirm(t("prompt.delete", { name: k.name }))) return;
-          await api(`/admin/keys/${k.id}`, { method: "DELETE", headers: headers() });
-          await refreshAll();
+          const btn = btnDelete;
+          if (btn.dataset.confirming !== "1") {
+            btn.dataset.confirming = "1";
+            btn.textContent = t("btn.deleteConfirm");
+            if (hint) {
+              hint.textContent = t("msg.deleteConfirm", { name: k.name });
+              hint.classList.remove("error");
+            }
+            setTimeout(() => {
+              btn.dataset.confirming = "0";
+              btn.textContent = t("btn.delete");
+              if (hint && hint.textContent === t("msg.deleteConfirm", { name: k.name })) {
+                hint.textContent = "";
+                hint.classList.remove("error");
+              }
+            }, 2500);
+            return;
+          }
+
+          btn.disabled = true;
+          try {
+            await api(`/admin/keys/${k.id}`, { method: "DELETE", headers: headers() });
+            if (hint) {
+              hint.textContent = t("msg.deleteOk");
+              hint.classList.remove("error");
+            }
+            await refreshAll();
+          } catch (e) {
+            if (hint) {
+              hint.textContent = t("msg.deleteFail", { message: e.message });
+              hint.classList.add("error");
+            }
+          } finally {
+            btn.disabled = false;
+            btn.dataset.confirming = "0";
+            btn.textContent = t("btn.delete");
+          }
         }
       },
       [t("btn.delete")]
@@ -753,21 +1015,7 @@ function renderKeys(keys, presets) {
       {
         class: "secondary",
         onclick: async () => {
-          const name = prompt(t("prompt.name"), k.name) ?? k.name;
-          const baseUrl = prompt(t("prompt.baseUrl"), k.baseUrl) ?? k.baseUrl;
-          const models = prompt(t("prompt.models"), (k.models || []).join(",")) ?? (k.models || []).join(",");
-          const apiKey = prompt(t("prompt.apiKey"), "") ?? "";
-          await api(`/admin/keys/${k.id}`, {
-            method: "PUT",
-            headers: headers(),
-            body: JSON.stringify({
-              name,
-              baseUrl,
-              models: splitModels(models),
-              apiKey
-            })
-          });
-          await refreshAll();
+          openEditKeyModal({ key: k, hint, onDone: refreshAll });
         }
       },
       [t("btn.edit")]
@@ -783,8 +1031,11 @@ function renderKeys(keys, presets) {
       el("tr", {}, [
         el("td", {}, [k.name]),
         el("td", {}, [providerLabel]),
-        el("td", {}, [k.baseUrl]),
+        el("td", { class: "colBaseUrl" }, [
+          el("span", { class: "truncate", title: k.baseUrl || "" }, [k.baseUrl || ""])
+        ]),
         el("td", {}, [(k.models || []).join(",") || t("models.all")]),
+        el("td", {}, [String(k.weight || 1)]),
         el("td", {}, [k.apiKeyMasked || ""]),
         el("td", {}, [statusText]),
         el("td", { class: "rowActions" }, [btnEdit, btnToggle, btnDelete])
@@ -806,6 +1057,12 @@ async function refreshAll() {
     applyPresetToForm(presets, provider);
     const keys = await loadKeys();
     renderKeys(keys, presets);
+    const existingKeyIds = new Set(keys.map((k) => String(k.id)).filter(Boolean));
+    const selected = getMonitorSelectedKeyIds();
+    const filtered = selected.filter((id) => existingKeyIds.has(String(id)));
+    if (filtered.length !== selected.length) {
+      setMonitorSelectedKeyIds(filtered);
+    }
     const stats = await loadStats();
     renderStats(stats);
     await refreshMonitorChart();
@@ -942,10 +1199,7 @@ async function main() {
   });
 
   document.getElementById("btnSetToken").addEventListener("click", () => {
-    const cur = getAdminToken();
-    const next = prompt(t("prompt.adminToken"), cur) ?? cur;
-    setAdminToken(next.trim());
-    refreshAll();
+    openAdminTokenModal({ onDone: refreshAll });
   });
 
   document.getElementById("btnRefresh").addEventListener("click", refreshAll);
@@ -981,6 +1235,7 @@ async function main() {
     const modelSelect = document.getElementById("modelSelect").value;
     const modelCustom = document.getElementById("modelCustom").value;
     const apiKey = document.getElementById("apiKey").value;
+    const weight = document.getElementById("weight").value;
     const enabled = document.getElementById("enabled").checked;
 
     const selectedModel =
@@ -996,10 +1251,12 @@ async function main() {
           baseUrl,
           models: selectedModel ? [selectedModel] : [],
           apiKey,
+          weight,
           enabled
         })
       });
       document.getElementById("apiKey").value = "";
+      document.getElementById("weight").value = "1";
       document.getElementById("modelSelect").value = "";
       setModelCustomVisible(false);
       document.getElementById("addHint").textContent = t("msg.addOk");

@@ -56,6 +56,40 @@ pre {
   font-size: 16px;
 }
 
+.detailsSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+
+.detailsSummary::-webkit-details-marker {
+  display: none;
+}
+
+.detailsSummary h2 {
+  margin: 0;
+}
+
+.detailsChevron {
+  display: inline-block;
+  transform: rotate(0deg);
+  font-size: 20px;
+  line-height: 1;
+  color: #9ca3af;
+}
+
+.details[open] .detailsChevron {
+  transform: rotate(90deg);
+}
+
+.details[open] .usage {
+  margin-top: 12px;
+}
+
 .grid {
   display: grid;
   gap: 12px;
@@ -70,6 +104,95 @@ pre {
   font-size: 13px;
 }
 
+.labelRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.helpIcon {
+  padding: 0 10px;
+  height: 28px;
+  line-height: 28px;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 50;
+}
+
+.modalCard {
+  width: min(640px, 100%);
+  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.modalTitle {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.modalClose {
+  padding: 0 10px;
+  height: 32px;
+  line-height: 32px;
+}
+
+.modalBody {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.modalNote {
+  font-size: 12px;
+  color: #9ca3af;
+  white-space: pre-line;
+}
+
+.codeBox {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #1f2937;
+  background: #0b1020;
+  color: #e5e7eb;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-line;
+  overflow: auto;
+}
+
+.modalBody label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.modalActions {
+  margin-top: 10px;
+  gap: 10px;
+}
+
 input,
 select {
   width: 100%;
@@ -79,6 +202,11 @@ select {
   background: #0b1020;
   color: #e5e7eb;
   outline: none;
+}
+
+input[type="checkbox"] {
+  width: auto;
+  padding: 0;
 }
 
 input:focus,
@@ -125,10 +253,76 @@ button:disabled {
   gap: 10px !important;
 }
 
+.apiKeyRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 200px auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.apiKeyRow > label {
+  min-width: 0;
+}
+
+.apiKeyRow input {
+  min-width: 0;
+}
+
+.apiKeyEnabled {
+  justify-content: flex-end;
+  white-space: nowrap;
+  padding-bottom: 2px;
+}
+
+@media (max-width: 780px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .span2 {
+    grid-column: span 1;
+  }
+  .apiKeyRow {
+    grid-template-columns: 1fr;
+  }
+  .apiKeyEnabled {
+    justify-content: flex-start;
+    padding-bottom: 0;
+  }
+}
+
 .hint {
   margin-top: 10px;
   font-size: 13px;
   color: #93c5fd;
+}
+
+.helpWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.tooltipPanel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  min-width: 320px;
+  max-width: 420px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #1f2937;
+  background: #0b1020;
+  color: #e5e7eb;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-line;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  display: none;
+}
+
+.helpWrap:hover .tooltipPanel,
+.helpWrap:focus-within .tooltipPanel {
+  display: block;
 }
 
 .error {
@@ -139,6 +333,45 @@ button:disabled {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+}
+
+.keysTable {
+  table-layout: fixed;
+}
+
+.keysTable th:nth-child(1) {
+  width: 90px;
+}
+
+.keysTable th:nth-child(2) {
+  width: 170px;
+}
+
+.keysTable th:nth-child(4) {
+  width: 70px;
+}
+
+.keysTable th:nth-child(5) {
+  width: 60px;
+}
+
+.keysTable th:nth-child(6) {
+  width: 140px;
+}
+
+.keysTable th:nth-child(7) {
+  width: 110px;
+}
+
+.keysTable th:nth-child(8) {
+  width: 260px;
+}
+
+.truncate {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table th,
@@ -152,7 +385,11 @@ button:disabled {
 .rowActions {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+
+.rowActions button {
+  padding: 8px 10px;
 }
 
 .usage pre {

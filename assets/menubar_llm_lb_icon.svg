@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- Template-style monochrome glyph for macOS menu bar -->
+  <g fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Key -->
+    <circle cx="8" cy="6" r="3.0"/>
+    <circle cx="8" cy="6" r="1.0"/>
+    <!-- Key shaft -->
+    <path d="M11 6 H19.2"/>
+    <!-- Key tip + teeth (minimal, readable at 18px) -->
+    <path d="M19.2 6 l2.0 0"/>
+    <path d="M16.0 6 v1.2"/>
+    <path d="M17.6 6 v0.9"/>
+    <path d="M19.0 6 v0.6"/>
+
+    <!-- Stem from key to splitter -->
+    <path d="M12 9.5 v2.2"/>
+    <!-- Splitter node -->
+    <circle cx="12" cy="12.0" r="0.6" fill="#000" stroke="none"/>
+    <!-- Branches -->
+    <path d="M12 12.0 L6.7 14.7"/>
+    <path d="M12 12.0 L12 14.9"/>
+    <path d="M12 12.0 L17.3 14.7"/>
+
+    <!-- Three "LLM chips" (no dots) -->
+    <rect x="4.4" y="15.5" width="4.6" height="4.6" rx="1.0"/>
+    <rect x="9.7" y="15.5" width="4.6" height="4.6" rx="1.0"/>
+    <rect x="15.0" y="15.5" width="4.6" height="4.6" rx="1.0"/>
+
+    <!-- Tiny "model" mark inside each chip (very simple) -->
+    <path d="M6.0 18.2 h1.4"/>
+    <path d="M11.3 18.2 h1.4"/>
+    <path d="M16.6 18.2 h1.4"/>
+  </g>
+</svg>
