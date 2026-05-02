@@ -2,7 +2,6 @@ const fs = require("fs/promises");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const zlib = require("zlib");
 
 async function pathExists(p) {
   try {
@@ -24,60 +23,10 @@ function fail(msg) {
 }
 
 function run(cmd, args, opts = {}) {
-  const { allowFailure = false, ...spawnOpts } = opts;
-  const res = spawnSync(cmd, args, { stdio: "inherit", ...spawnOpts });
+  const res = spawnSync(cmd, args, { stdio: "inherit", ...opts });
   if (res.error) fail(res.error);
-  if (typeof res.status === "number" && res.status !== 0) {
-    if (allowFailure) return res;
-    fail(`${cmd} failed`);
-  }
+  if (typeof res.status === "number" && res.status !== 0) fail(`${cmd} failed`);
   return res;
-}
-
-function crc32(buf) {
-  let c = 0xffffffff;
-  for (let i = 0; i < buf.length; i += 1) {
-    c ^= buf[i];
-    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  }
-  return (c ^ 0xffffffff) >>> 0;
-}
-
-function pngChunk(type, data) {
-  const typeBuf = Buffer.from(type, "ascii");
-  const lenBuf = Buffer.alloc(4);
-  lenBuf.writeUInt32BE(data.length, 0);
-  const crcBuf = Buffer.alloc(4);
-  crcBuf.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
-  return Buffer.concat([lenBuf, typeBuf, data, crcBuf]);
-}
-
-function solidPng(size, rgba) {
-  const w = size;
-  const h = size;
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(w, 0);
-  ihdr.writeUInt32BE(h, 4);
-  ihdr.writeUInt8(8, 8);
-  ihdr.writeUInt8(6, 9);
-  ihdr.writeUInt8(0, 10);
-  ihdr.writeUInt8(0, 11);
-  ihdr.writeUInt8(0, 12);
-
-  const row = Buffer.alloc(1 + w * 4);
-  row[0] = 0;
-  for (let x = 0; x < w; x += 1) {
-    row[1 + x * 4 + 0] = rgba[0];
-    row[1 + x * 4 + 1] = rgba[1];
-    row[1 + x * 4 + 2] = rgba[2];
-    row[1 + x * 4 + 3] = rgba[3];
-  }
-  const raw = Buffer.alloc(row.length * h);
-  for (let y = 0; y < h; y += 1) row.copy(raw, y * row.length);
-  const idat = zlib.deflateSync(raw, { level: 9 });
-
-  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  return Buffer.concat([sig, pngChunk("IHDR", ihdr), pngChunk("IDAT", idat), pngChunk("IEND", Buffer.alloc(0))]);
 }
 
 async function main() {
@@ -792,38 +741,9 @@ app.run()
 
   await fs.writeFile(swiftPath, swift, "utf8");
   try {
-    const iconPng = path.join(buildDir, "icon-1024.png");
-    const iconSrc = path.join(root, "assets", "icon.png");
-    if (await pathExists(iconSrc)) {
-      await fs.copyFile(iconSrc, iconPng);
-    } else {
-      await fs.writeFile(iconPng, solidPng(1024, [37, 99, 235, 255]));
-    }
-    const iconsetDir = path.join(buildDir, "AppIcon.iconset");
-    await fs.mkdir(iconsetDir, { recursive: true });
-    const sizes = [
-      [16, "icon_16x16.png"],
-      [32, "icon_16x16@2x.png"],
-      [32, "icon_32x32.png"],
-      [64, "icon_32x32@2x.png"],
-      [128, "icon_128x128.png"],
-      [256, "icon_128x128@2x.png"],
-      [256, "icon_256x256.png"],
-      [512, "icon_256x256@2x.png"],
-      [512, "icon_512x512.png"],
-      [1024, "icon_512x512@2x.png"]
-    ];
-    for (const [px, name] of sizes) {
-      run("sips", ["-z", String(px), String(px), iconPng, "--out", path.join(iconsetDir, name)], {
-        stdio: ["ignore", "ignore", "inherit"]
-      });
-    }
-    const iconResult = run("iconutil", ["-c", "icns", iconsetDir, "-o", path.join(resourcesDir, "AppIcon.icns")], {
-      allowFailure: true
-    });
-    if (iconResult.status !== 0) {
-      process.stderr.write("warning: iconutil failed; continuing without AppIcon.icns\n");
-    }
+    const iconPath = path.join(root, "assets", "AppIcon.icns");
+    if (!(await pathExists(iconPath))) fail(`missing icon: ${iconPath}`);
+    await fs.copyFile(iconPath, path.join(resourcesDir, "AppIcon.icns"));
 
     const armOut = path.join(buildDir, "llm-api-lb-arm64");
     const x64Out = path.join(buildDir, "llm-api-lb-x86_64");
