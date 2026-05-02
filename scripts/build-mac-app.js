@@ -24,9 +24,13 @@ function fail(msg) {
 }
 
 function run(cmd, args, opts = {}) {
-  const res = spawnSync(cmd, args, { stdio: "inherit", ...opts });
+  const { allowFailure = false, ...spawnOpts } = opts;
+  const res = spawnSync(cmd, args, { stdio: "inherit", ...spawnOpts });
   if (res.error) fail(res.error);
-  if (typeof res.status === "number" && res.status !== 0) fail(`${cmd} failed`);
+  if (typeof res.status === "number" && res.status !== 0) {
+    if (allowFailure) return res;
+    fail(`${cmd} failed`);
+  }
   return res;
 }
 
@@ -814,9 +818,12 @@ app.run()
         stdio: ["ignore", "ignore", "inherit"]
       });
     }
-    run("iconutil", ["-c", "icns", iconsetDir, "-o", path.join(resourcesDir, "AppIcon.icns")], {
-      stdio: ["ignore", "ignore", "inherit"]
+    const iconResult = run("iconutil", ["-c", "icns", iconsetDir, "-o", path.join(resourcesDir, "AppIcon.icns")], {
+      allowFailure: true
     });
+    if (iconResult.status !== 0) {
+      process.stderr.write("warning: iconutil failed; continuing without AppIcon.icns\n");
+    }
 
     const armOut = path.join(buildDir, "llm-api-lb-arm64");
     const x64Out = path.join(buildDir, "llm-api-lb-x86_64");
