@@ -63,6 +63,27 @@ function isPortFree(port) {
   });
 }
 
+function waitForPortListening(port, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve) => {
+    const tryOnce = () => {
+      const sock = net.createConnection({ port, host: "127.0.0.1" });
+      let settled = false;
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        sock.destroy();
+        if (ok) return resolve(true);
+        if (Date.now() >= deadline) return resolve(false);
+        setTimeout(tryOnce, 50);
+      };
+      sock.once("connect", () => finish(true));
+      sock.once("error", () => finish(false));
+    };
+    tryOnce();
+  });
+}
+
 function normalizeProvider(raw) {
   if (!raw || typeof raw !== "string") return null;
   const p = raw.trim().toLowerCase();
@@ -707,8 +728,14 @@ app.post("/launcher/start", express.json({ limit: "20kb" }), async (req, res) =>
   const child = spawn(command, args, { env, detached: true, stdio: "ignore" });
   child.unref();
 
+  const ready = await waitForPortListening(port, 5000);
+  if (!ready) {
+    try { child.kill("SIGTERM"); } catch {}
+    return res.status(504).json({ error: "child_not_ready" });
+  }
+
   res.json({ ok: true, url: `http://localhost:${port}/` });
-  setTimeout(() => process.exit(0), 700);
+  setTimeout(() => process.exit(0), 200);
 });
 
 app.get("/", (req, res, next) => {
