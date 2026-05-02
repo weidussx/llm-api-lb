@@ -114,7 +114,14 @@ Copy all request headers EXCEPT:
 - `content-length` — fetch sets it from `init.body`
 - `authorization` — replaced with `Bearer <key.apiKey>`
 
-Body forwarded as-is for non-GET/HEAD. Currently the body is buffered by `express.raw({limit: 20mb})` before this point, which means it can be replayed on retry. Switching to streaming would break cross-key retry — see follow-ups in PR #1's notes.
+Body forwarded as-is for non-GET/HEAD. The proxy reads the request body itself (no global `express.raw`) up to `BODY_BUFFER_LIMIT_BYTES` (default 1 MB). Two modes:
+
+| Body size                           | Mode                  | Cross-key retry | Notes |
+|-------------------------------------|-----------------------|:---------------:|-------|
+| ≤ `BODY_BUFFER_LIMIT_BYTES`         | buffered (Buffer)     | yes             | Up to N attempts, body replayed each time |
+| > `BODY_BUFFER_LIMIT_BYTES`         | stream-through        | **no** (1 attempt) | Prefix yielded first, then `req` chunks; `init.duplex = "half"` |
+
+`extractModelFromBuffer` is run against the captured prefix. For full-buffer JSON it parses normally; for stream mode the prefix is truncated, so it falls back to a `"model"\s*:\s*"([^"]+)"` regex over the first 8 KB — this works for OpenAI-style payloads where `"model"` appears near the start.
 
 ## Things that look wrong but are intentional
 

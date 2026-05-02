@@ -26,6 +26,14 @@ const UPSTREAM_TIMEOUT_MS = (() => {
   return n;
 })();
 
+const BODY_BUFFER_LIMIT_BYTES = (() => {
+  const raw = process.env.BODY_BUFFER_LIMIT_BYTES;
+  if (raw === undefined || raw === "") return 1 * 1024 * 1024;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return 1 * 1024 * 1024;
+  return n;
+})();
+
 const IS_PKG = Boolean(process.pkg);
 const LAUNCHER_MODE = process.env.LAUNCHER_MODE ? process.env.LAUNCHER_MODE === "1" : IS_PKG;
 const AUTO_OPEN_BROWSER = process.env.AUTO_OPEN_BROWSER ? process.env.AUTO_OPEN_BROWSER === "1" : IS_PKG;
@@ -608,19 +616,69 @@ function markSuccess(keyId) {
   markStateDirty();
 }
 
-async function extractModelFromRequest(req) {
-  const contentType = (req.headers["content-type"] || "").toLowerCase();
-  if (!contentType.includes("application/json")) return null;
-  if (!Buffer.isBuffer(req.body)) return null;
+function extractModelFromBuffer(buf, contentType) {
+  if (!contentType || !contentType.toLowerCase().includes("application/json")) return null;
+  if (!Buffer.isBuffer(buf) || buf.length === 0) return null;
   try {
-    const parsed = JSON.parse(req.body.toString("utf8"));
+    const parsed = JSON.parse(buf.toString("utf8"));
     return parsed && typeof parsed === "object" ? parsed.model || null : null;
   } catch {
-    return null;
+    const text = buf.toString("utf8", 0, Math.min(buf.length, 8192));
+    const m = text.match(/"model"\s*:\s*"([^"]+)"/);
+    return m ? m[1] : null;
   }
 }
 
-async function fetchUpstream({ req, key, originalPathAndQuery }) {
+function captureRequestBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    let done = false;
+
+    const cleanup = () => {
+      req.off("data", onData);
+      req.off("end", onEnd);
+      req.off("error", onErr);
+    };
+    const onData = (chunk) => {
+      if (done) return;
+      chunks.push(chunk);
+      size += chunk.length;
+      if (size >= limit) {
+        done = true;
+        req.pause();
+        cleanup();
+        resolve({ prefix: Buffer.concat(chunks, size), full: false });
+      }
+    };
+    const onEnd = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve({ prefix: Buffer.concat(chunks, size), full: true });
+    };
+    const onErr = (err) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(err);
+    };
+
+    req.on("data", onData);
+    req.on("end", onEnd);
+    req.on("error", onErr);
+  });
+}
+
+async function* streamPrefixThenReq(prefix, req) {
+  if (prefix && prefix.length) yield prefix;
+  if (typeof req.isPaused === "function" && req.isPaused()) req.resume();
+  for await (const chunk of req) {
+    yield chunk;
+  }
+}
+
+async function fetchUpstream({ req, key, originalPathAndQuery, captured }) {
   const upstreamPath = rewritePathForProvider(key.provider, originalPathAndQuery);
   const upstreamUrl = safeJoinUrl(key.baseUrl, upstreamPath);
 
@@ -640,7 +698,12 @@ async function fetchUpstream({ req, key, originalPathAndQuery }) {
   };
 
   if (req.method !== "GET" && req.method !== "HEAD") {
-    init.body = req.body;
+    if (captured && captured.full) {
+      init.body = captured.prefix;
+    } else if (captured) {
+      init.body = streamPrefixThenReq(captured.prefix, req);
+      init.duplex = "half";
+    }
   }
 
   let timer = null;
@@ -1042,12 +1105,21 @@ app.use(
   })
 );
 
-app.use(express.raw({ type: "*/*", limit: "20mb" }));
-
 app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
   const state = getState();
 
-  const requestedModel = await extractModelFromRequest(req);
+  const hasBody = req.method !== "GET" && req.method !== "HEAD";
+  let captured = null;
+  if (hasBody) {
+    try {
+      captured = await captureRequestBody(req, BODY_BUFFER_LIMIT_BYTES);
+    } catch (err) {
+      return res.status(400).json({ error: "request_body_read_failed", message: String(err && err.message ? err.message : err) });
+    }
+  }
+
+  const contentType = req.headers["content-type"] || "";
+  const requestedModel = captured ? extractModelFromBuffer(captured.prefix, contentType) : null;
   const requestedProvider =
     (req.header("x-llm-provider") || "").trim().toLowerCase() || guessProviderFromModel(requestedModel);
 
@@ -1067,7 +1139,8 @@ app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
     if (requestedModel && Array.isArray(k.models) && k.models.length > 0 && !k.models.includes(requestedModel)) return false;
     return true;
   });
-  const attempts = Math.max(1, poolKeys.length);
+  const isStreaming = !!(captured && !captured.full);
+  const attempts = isStreaming ? 1 : Math.max(1, poolKeys.length);
   let lastStatus = 502;
   let lastErrorInfo = null;
 
@@ -1100,7 +1173,7 @@ app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
     metricInFlight.inc({ provider: labelsBase.provider, key_id: labelsBase.key_id, key_name: labelsBase.key_name });
 
     try {
-      const upstreamRes = await fetchUpstream({ req, key: chosen, originalPathAndQuery });
+      const upstreamRes = await fetchUpstream({ req, key: chosen, originalPathAndQuery, captured });
       lastStatus = upstreamRes.status || 502;
       const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
 

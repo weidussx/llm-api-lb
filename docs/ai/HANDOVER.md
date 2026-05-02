@@ -16,9 +16,13 @@
 
 ## Next Steps
 - Open candidates not yet addressed in PR #1:
-  - **#7** Stream-through for non-JSON bodies (image/audio multimodal). Largest memory win, biggest refactor — needs a "buffer-if-small / stream-if-large + retry-aware" split.
   - **#10** Treat 401/403 as hard-disable + UI badge instead of 10-min cooldown loop. Requires a new `disabledReason` field on keys + frontend tweak.
 - Dead code: `server.js:16 const INSTANCE_ID` reads the wrong env var name (`LLM_KEY_LB_INSTANCE_ID`) and is never referenced. Safe to delete.
+
+## Body handling (post-PR #1)
+- Proxy reads request body itself, no global `express.raw`.
+- Bodies up to `BODY_BUFFER_LIMIT_BYTES` (default 1 MB) are buffered and support cross-key retry.
+- Larger bodies stream-through to the chosen key (one attempt, no retry on upstream failure). No upper cap — bound by network and upstream.
 
 ## Index of canonical docs
 - [DATA_SCHEMA.md](DATA_SCHEMA.md) — `state.json` and `stats.json` formats, invariants, atomic-write rules.
