@@ -282,10 +282,114 @@ function recordUsage({ key, model, path, method, status, durationMs }) {
 
   perKeyUsage.set(id, entry);
   recordSeries({ key, status, durationMs });
+  markStatsDirty();
 }
 
 async function ensureDataDir() {
   await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
+}
+
+const STATS_FILE = process.env.STATS_FILE || path.join(path.dirname(DATA_FILE), "stats.json");
+const STATS_FLUSH_DEBOUNCE_MS = 5_000;
+
+let statsFlushTimer = null;
+let statsFlushInFlight = null;
+let statsFlushPending = false;
+
+function serializeStats() {
+  const usage = {};
+  for (const [id, entry] of perKeyUsage.entries()) usage[id] = entry;
+  const series = {};
+  for (const [id, m] of perKeySeries.entries()) {
+    const obj = {};
+    for (const [t, p] of m.entries()) obj[String(t)] = p;
+    series[id] = obj;
+  }
+  return { v: 1, savedAt: Date.now(), usage, series };
+}
+
+async function loadStats() {
+  let parsed;
+  try {
+    const raw = await fs.readFile(STATS_FILE, "utf8");
+    parsed = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (!parsed || typeof parsed !== "object") return;
+
+  const knownIds = new Set((cachedState && Array.isArray(cachedState.keys) ? cachedState.keys : []).map((k) => k.id));
+  const now = Date.now();
+  const windowStart = Math.floor(now / SERIES_BUCKET_MS) * SERIES_BUCKET_MS - SERIES_WINDOW_MINUTES * SERIES_BUCKET_MS;
+
+  if (parsed.usage && typeof parsed.usage === "object") {
+    for (const [id, entry] of Object.entries(parsed.usage)) {
+      if (!entry || typeof entry !== "object") continue;
+      if (knownIds.size && !knownIds.has(id)) continue;
+      if (!entry.statusClassCounts || typeof entry.statusClassCounts !== "object") {
+        entry.statusClassCounts = { "2xx": 0, "3xx": 0, "4xx": 0, "5xx": 0, error: 0 };
+      }
+      perKeyUsage.set(id, entry);
+    }
+  }
+  if (parsed.series && typeof parsed.series === "object") {
+    for (const [id, points] of Object.entries(parsed.series)) {
+      if (!points || typeof points !== "object") continue;
+      if (knownIds.size && !knownIds.has(id)) continue;
+      const m = new Map();
+      for (const [tStr, p] of Object.entries(points)) {
+        const t = Number(tStr);
+        if (!Number.isFinite(t) || t < windowStart) continue;
+        if (!p || typeof p !== "object") continue;
+        m.set(t, p);
+      }
+      if (m.size) perKeySeries.set(id, m);
+    }
+  }
+}
+
+async function persistStatsNow() {
+  await ensureDataDir();
+  const tmp = `${STATS_FILE}.${crypto.randomUUID()}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(serializeStats()), "utf8");
+  await fs.rename(tmp, STATS_FILE);
+}
+
+function scheduleStatsFlush() {
+  if (statsFlushTimer) return;
+  statsFlushTimer = setTimeout(() => {
+    statsFlushTimer = null;
+    statsFlushPending = false;
+    statsFlushInFlight = persistStatsNow()
+      .catch((err) => {
+        process.stderr.write(`stats flush failed: ${err && err.message ? err.message : err}\n`);
+      })
+      .finally(() => {
+        statsFlushInFlight = null;
+        if (statsFlushPending) scheduleStatsFlush();
+      });
+  }, STATS_FLUSH_DEBOUNCE_MS);
+}
+
+function markStatsDirty() {
+  if (statsFlushInFlight) {
+    statsFlushPending = true;
+    return;
+  }
+  scheduleStatsFlush();
+}
+
+async function flushStatsNow() {
+  if (statsFlushTimer) {
+    clearTimeout(statsFlushTimer);
+    statsFlushTimer = null;
+  }
+  if (statsFlushInFlight) {
+    try { await statsFlushInFlight; } catch {}
+  }
+  await persistStatsNow().catch((err) => {
+    process.stderr.write(`stats flush failed: ${err && err.message ? err.message : err}\n`);
+  });
 }
 
 let cachedState = null;
@@ -895,6 +999,7 @@ app.delete("/admin/keys/:id", requireAdmin, async (req, res) => {
   await flushNow();
   perKeyUsage.delete(id);
   perKeySeries.delete(id);
+  markStatsDirty();
   if (removed) {
     try {
       metricKeyCooldown.remove(removed.provider, removed.id, removed.name);
@@ -1068,6 +1173,7 @@ async function startMain() {
   launcherReason = null;
   try {
     await loadState();
+    await loadStats();
     const server = await listenAsync(PORT);
     runtimeListenPort = PORT;
     const url = `http://localhost:${PORT}/`;
@@ -1090,7 +1196,7 @@ async function gracefulShutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   try {
-    await flushNow();
+    await Promise.allSettled([flushNow(), flushStatsNow()]);
   } finally {
     process.exit(signal === "SIGTERM" || signal === "SIGINT" ? 0 : 1);
   }
