@@ -82,16 +82,18 @@ return null
 
 ## Cooldown — `shouldCooldownOnStatus` × `computeCooldownMs`
 
-| Upstream signal       | Cool? | Duration | `failures++`? |
-|-----------------------|:-----:|----------|:-------------:|
-| 200–399               |  no   | `markSuccess` clears existing cooldown and zeros failures | — |
-| 429                   |  yes  | 45 s     | yes |
-| 401, 403              |  yes  | 600 s    | yes |
-| 5xx                   |  yes  | 10 s     | yes |
-| 4xx (other than auth) |  no   | —        | yes (counter increments, no cooldown applied) |
-| network error / null  |  yes  | 20 s     | yes |
+| Upstream signal       | Cool? | Duration | `failures++`? | Side effect |
+|-----------------------|:-----:|----------|:-------------:|-------------|
+| 200–399               |  no   | `markSuccess` clears existing cooldown and zeros failures | — | — |
+| 429                   |  yes  | 45 s     | yes | — |
+| **401, 403**          |  no   | —        | yes | **`disabledReason = "auth_failed"`, key removed from pool until manually reset** |
+| 5xx                   |  yes  | 10 s     | yes | — |
+| 4xx (other than auth) |  no   | —        | yes (counter increments, no cooldown applied) | — |
+| network error / null  |  yes  | 20 s     | yes | — |
 
 Failure counter resets to zero on success. It is not currently used to scale cooldown duration — durations are status-only.
+
+**Cross-key retry on 401/403**: `shouldCooldownOnStatus` still returns `true` for 401/403, which only governs whether the proxy proceeds to retry on the **next** key. The marked key itself is not on a cooldown timer — it is hard-disabled via `disabledReason` and stays out of the pool until the user fixes it. See DATA_SCHEMA.md for the manual-recovery contract.
 
 ## Path rewriting — `rewritePathForProvider`
 

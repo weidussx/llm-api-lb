@@ -467,3 +467,22 @@ button:disabled {
 .checkboxCell {
   width: 32px;
 }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.badgeAuthFail {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fecaca;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+tr.rowAuthFail td {
+  background: rgba(239, 68, 68, 0.05);
+}

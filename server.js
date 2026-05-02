@@ -13,8 +13,6 @@ const { Readable } = require("stream");
 const PORT = parseInt(process.env.PORT || "8787", 10);
 const ADMIN_TOKEN = (process.env.ADMIN_TOKEN || "").trim();
 const DATA_FILE = process.env.DATA_FILE || path.join(process.cwd(), "data", "state.json");
-const INSTANCE_ID = (process.env.LLM_KEY_LB_INSTANCE_ID || (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex")))
-  .trim();
 
 const METRICS_PATH = process.env.METRICS_PATH || "/metrics";
 
@@ -161,9 +159,12 @@ function shouldCooldownOnStatus(status) {
 
 function computeCooldownMs(status, failures) {
   if (status === 429) return 45_000;
-  if (status === 401 || status === 403) return 10 * 60_000;
   if (typeof status === "number" && status >= 500) return 10_000;
   return 20_000;
+}
+
+function isAuthFailureStatus(status) {
+  return status === 401 || status === 403;
 }
 
 function maskKey(apiKey) {
@@ -438,6 +439,7 @@ function normalizeState(parsed) {
     if (!k || typeof k !== "object") return;
     if (k.weight === undefined || k.weight === null) k.weight = 1;
     k.weight = normalizeWeight(k.weight);
+    if (k.disabledReason === undefined) k.disabledReason = null;
   });
   if (typeof parsed.rrIndex !== "number") parsed.rrIndex = 0;
   if (!parsed.rrIndexByPool || typeof parsed.rrIndexByPool !== "object") parsed.rrIndexByPool = {};
@@ -535,6 +537,7 @@ function pickKeyRoundRobin(state, { provider, model }) {
   const now = Date.now();
   const pool = state.keys.filter((k) => {
     if (!k.enabled) return false;
+    if (k.disabledReason) return false;
     if (provider && k.provider !== provider) return false;
     if (model && Array.isArray(k.models) && k.models.length > 0 && !k.models.includes(model)) return false;
     return true;
@@ -585,6 +588,7 @@ function soonestCooldownMs(state, { provider, model }) {
   let soonest = Infinity;
   for (const k of state.keys) {
     if (!k.enabled) continue;
+    if (k.disabledReason) continue;
     if (provider && k.provider !== provider) continue;
     if (model && Array.isArray(k.models) && k.models.length > 0 && !k.models.includes(model)) continue;
     const until = Number(k.cooldownUntil || 0);
@@ -598,7 +602,10 @@ function markFailure(keyId, { status }) {
   const key = state.keys.find((k) => k.id === keyId);
   if (!key) return;
   key.failures = (key.failures || 0) + 1;
-  if (shouldCooldownOnStatus(status)) {
+  if (isAuthFailureStatus(status)) {
+    key.disabledReason = "auth_failed";
+    key.cooldownUntil = 0;
+  } else if (shouldCooldownOnStatus(status)) {
     const cooldownMs = computeCooldownMs(status, key.failures);
     key.cooldownUntil = Date.now() + cooldownMs;
   }
@@ -1041,6 +1048,7 @@ app.post("/admin/keys", requireAdmin, async (req, res) => {
     enabled: enabled !== false,
     failures: 0,
     cooldownUntil: 0,
+    disabledReason: null,
     createdAt,
     updatedAt: createdAt
   };
@@ -1051,7 +1059,8 @@ app.post("/admin/keys", requireAdmin, async (req, res) => {
 
 app.put("/admin/keys/:id", requireAdmin, async (req, res) => {
   const id = req.params.id;
-  const { name, provider, apiKey, baseUrl, models, enabled, weight } = req.body || {};
+  const body = req.body || {};
+  const { name, provider, apiKey, baseUrl, models, enabled, weight } = body;
   const state = getState();
   const key = state.keys.find((k) => k.id === id);
   if (!key) return res.status(404).json({ error: "not_found" });
@@ -1069,11 +1078,23 @@ app.put("/admin/keys/:id", requireAdmin, async (req, res) => {
   }
   if (typeof apiKey === "string") {
     const normalizedApiKey = normalizeApiKey(apiKey);
-    if (normalizedApiKey) key.apiKey = normalizedApiKey;
+    if (normalizedApiKey && normalizedApiKey !== key.apiKey) {
+      key.apiKey = normalizedApiKey;
+      key.disabledReason = null;
+      key.failures = 0;
+      key.cooldownUntil = 0;
+    }
   }
   if (Array.isArray(models)) key.models = models.filter((m) => typeof m === "string" && m.trim()).map((m) => m.trim());
   if (typeof enabled === "boolean") key.enabled = enabled;
   if (weight !== undefined) key.weight = normalizeWeight(weight);
+  if (Object.prototype.hasOwnProperty.call(body, "disabledReason")) {
+    if (body.disabledReason === null || body.disabledReason === "") {
+      key.disabledReason = null;
+      key.failures = 0;
+      key.cooldownUntil = 0;
+    }
+  }
   key.updatedAt = nowIso();
   await flushNow();
   res.json({ ok: true });
@@ -1135,6 +1156,7 @@ app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
 
   const poolKeys = state.keys.filter((k) => {
     if (!k.enabled) return false;
+    if (k.disabledReason) return false;
     if (provider && k.provider !== provider) return false;
     if (requestedModel && Array.isArray(k.models) && k.models.length > 0 && !k.models.includes(requestedModel)) return false;
     return true;
