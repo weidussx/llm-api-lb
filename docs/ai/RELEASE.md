@@ -1,5 +1,9 @@
 # Release Log
 
+## v1.1.1
+- **Fix (UI)**: The keys table now auto-refreshes every 5 s while the tab is visible (paused while backgrounded, resumed on focus). Previously the 45-s 429 cooldown was usually over before anyone could see it because the page only refreshed on a manual click.
+- **Fix (UI)**: Cooling keys now render an orange badge `<status> · <seconds>s` (e.g. `429 · 42s`) sourced from `/admin/stats.lastStatus`, with a tooltip explaining the cooldown reason and auto-resume time. Row gets a faint orange tint, mirroring the red tint already used for `auth_failed`.
+
 ## v1.1.0
 - **Feat**: Hard-disable keys on upstream 401/403 instead of putting them on a 10-minute cooldown loop. The key is parked with `disabledReason: "auth_failed"`, removed from the round-robin pool, and stays out until manually recovered. Cross-key retry on the same request still works (other keys may have valid auth).
 - **Feat (UI)**: Auth-failed rows render a red badge in the status column with a tooltip explaining recovery, plus a faint red row tint and a one-click "Clear disable" button. Saving a new `apiKey` via the edit modal also clears the disable state automatically.
