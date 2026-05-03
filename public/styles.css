@@ -486,3 +486,13 @@ button:disabled {
 tr.rowAuthFail td {
   background: rgba(239, 68, 68, 0.05);
 }
+
+.badgeCooldown {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fed7aa;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+tr.rowCooldown td {
+  background: rgba(245, 158, 11, 0.05);
+}

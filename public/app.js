@@ -166,6 +166,8 @@ const I18N = {
     "status.disabled": "禁用",
     "status.ok": "正常 (fail={failures})",
     "status.cooldown": "冷却中 {seconds}s (fail={failures})",
+    "status.cooldownBadge": "{status} · {seconds}s",
+    "status.cooldownHint": "上游返回 {status}，本 key 已暂停轮询，{seconds} 秒后自动恢复。fail={failures}",
     "status.authFailed": "认证失败",
     "status.authFailedHint": "上游返回 401/403，已停止轮询此 Key。修改 apiKey 后会自动恢复，或点击解除禁用。",
     "btn.clearDisable": "解除禁用",
@@ -299,6 +301,8 @@ const I18N = {
     "status.disabled": "Disabled",
     "status.ok": "OK (fail={failures})",
     "status.cooldown": "Cooling down {seconds}s (fail={failures})",
+    "status.cooldownBadge": "{status} · {seconds}s",
+    "status.cooldownHint": "Upstream returned {status}. This key is paused for the next {seconds}s, then auto-resumes. fail={failures}",
     "status.authFailed": "Auth failed",
     "status.authFailedHint": "Upstream returned 401/403. This key is parked out of rotation. Updating apiKey clears it automatically, or click Clear disable.",
     "btn.clearDisable": "Clear disable",
@@ -913,9 +917,13 @@ function applyPresetToForm(presets, provider) {
   renderModelOptions(p.models || []);
 }
 
-function renderKeys(keys, presets) {
+function renderKeys(keys, presets, stats = []) {
   const root = document.getElementById("keys");
   const hint = document.getElementById("keysHint");
+  const statsByKey = {};
+  (stats || []).forEach((s) => {
+    if (s && s.id) statsByKey[s.id] = s;
+  });
   if (!keys.length) {
     root.innerHTML = "";
     root.appendChild(el("div", { class: "muted" }, [t("keys.empty")]));
@@ -1028,13 +1036,30 @@ function renderKeys(keys, presets) {
     );
 
     const authFailed = k.disabledReason === "auth_failed";
-    const statusCell = authFailed
-      ? el("span", { class: "badge badgeAuthFail", title: t("status.authFailedHint") }, [t("status.authFailed")])
-      : enabled
-        ? cooldown
-          ? t("status.cooldown", { seconds: cooldown, failures: k.failures || 0 })
-          : t("status.ok", { failures: k.failures || 0 })
-        : t("status.disabled");
+    const stat = statsByKey[k.id] || {};
+    const lastStatus = stat.lastStatus || "";
+    let statusCell;
+    if (authFailed) {
+      statusCell = el(
+        "span",
+        { class: "badge badgeAuthFail", title: t("status.authFailedHint") },
+        [t("status.authFailed")]
+      );
+    } else if (enabled && cooldown) {
+      const label = lastStatus
+        ? t("status.cooldownBadge", { status: lastStatus, seconds: cooldown })
+        : t("status.cooldown", { seconds: cooldown, failures: k.failures || 0 });
+      const cooldownTitle = t("status.cooldownHint", {
+        status: lastStatus || "—",
+        seconds: cooldown,
+        failures: k.failures || 0
+      });
+      statusCell = el("span", { class: "badge badgeCooldown", title: cooldownTitle }, [label]);
+    } else if (enabled) {
+      statusCell = t("status.ok", { failures: k.failures || 0 });
+    } else {
+      statusCell = t("status.disabled");
+    }
 
     const rowActions = [btnEdit];
     if (authFailed) {
@@ -1058,8 +1083,13 @@ function renderKeys(keys, presets) {
     }
     rowActions.push(btnToggle, btnDelete);
 
+    const rowClass = authFailed
+      ? "rowAuthFail"
+      : enabled && cooldown
+        ? "rowCooldown"
+        : "";
     tbody.appendChild(
-      el("tr", { class: authFailed ? "rowAuthFail" : "" }, [
+      el("tr", { class: rowClass }, [
         el("td", {}, [k.name]),
         el("td", {}, [providerLabel]),
         el("td", { class: "colBaseUrl" }, [
@@ -1086,15 +1116,14 @@ async function refreshAll() {
     renderProviderOptions(presets);
     const provider = document.getElementById("provider").value || Object.keys(presets)[0];
     applyPresetToForm(presets, provider);
-    const keys = await loadKeys();
-    renderKeys(keys, presets);
+    const [keys, stats] = await Promise.all([loadKeys(), loadStats()]);
+    renderKeys(keys, presets, stats);
     const existingKeyIds = new Set(keys.map((k) => String(k.id)).filter(Boolean));
     const selected = getMonitorSelectedKeyIds();
     const filtered = selected.filter((id) => existingKeyIds.has(String(id)));
     if (filtered.length !== selected.length) {
       setMonitorSelectedKeyIds(filtered);
     }
-    const stats = await loadStats();
     renderStats(stats);
     await refreshMonitorChart();
   } catch (e) {
@@ -1298,6 +1327,20 @@ async function main() {
   });
 
   await refreshAll();
+  startAutoRefresh();
+}
+
+let autoRefreshTimer = null;
+function startAutoRefresh() {
+  const tick = () => {
+    if (document.visibilityState !== "visible") return;
+    refreshAll().catch(() => {});
+  };
+  if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+  autoRefreshTimer = setInterval(tick, 5000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") tick();
+  });
 }
 
 main();
