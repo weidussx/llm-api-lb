@@ -167,6 +167,17 @@ function isAuthFailureStatus(status) {
   return status === 401 || status === 403;
 }
 
+function detectAuthFailureFromBody(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length === 0) return false;
+  const text = buf.toString("utf8", 0, Math.min(buf.length, 8192));
+  if (/"reason"\s*:\s*"API_KEY_(INVALID|EXPIRED|REVOKED)"/i.test(text)) return true;
+  if (/"code"\s*:\s*"invalid_api_key"/i.test(text)) return true;
+  if (/"type"\s*:\s*"authentication_error"/i.test(text)) return true;
+  if (/api[_ -]?key.{0,40}(invalid|expired|revoked|not\s+valid)/i.test(text)) return true;
+  if (/(invalid|expired|revoked).{0,40}api[_ -]?key/i.test(text)) return true;
+  return false;
+}
+
 function maskKey(apiKey) {
   if (!apiKey) return "";
   if (apiKey.length <= 8) return "********";
@@ -597,12 +608,12 @@ function soonestCooldownMs(state, { provider, model }) {
   return soonest === Infinity ? 0 : soonest - now;
 }
 
-function markFailure(keyId, { status }) {
+function markFailure(keyId, { status, reason }) {
   const state = getState();
   const key = state.keys.find((k) => k.id === keyId);
   if (!key) return;
   key.failures = (key.failures || 0) + 1;
-  if (isAuthFailureStatus(status)) {
+  if (reason === "auth_failed" || isAuthFailureStatus(status)) {
     key.disabledReason = "auth_failed";
     key.cooldownUntil = 0;
   } else if (shouldCooldownOnStatus(status)) {
@@ -1210,20 +1221,52 @@ app.all(["/v1/*", "/chat/*", "/embeddings", "/models"], async (req, res) => {
         return;
       }
 
-      await markFailure(chosen.id, { status: lastStatus });
-
-      if (i < attempts - 1 && shouldCooldownOnStatus(lastStatus)) {
+      let bufferedErrorBody = null;
+      let detectedAuthFailure = false;
+      const isClientError = lastStatus >= 400 && lastStatus < 500;
+      if (isClientError && upstreamRes.body) {
         try {
-          await upstreamRes.arrayBuffer();
+          const arr = await upstreamRes.arrayBuffer();
+          bufferedErrorBody = Buffer.from(arr);
+          detectedAuthFailure = detectAuthFailureFromBody(bufferedErrorBody);
         } catch {
-          lastErrorInfo = {
-            message: "upstream_body_read_failed",
-            upstream_url: null,
-            code: null,
-            cause_code: null
-          };
+          // body unreadable; fall through with bufferedErrorBody=null
+        }
+      }
+
+      await markFailure(chosen.id, {
+        status: lastStatus,
+        reason: detectedAuthFailure ? "auth_failed" : undefined
+      });
+
+      const willRetry =
+        i < attempts - 1 && (detectedAuthFailure || shouldCooldownOnStatus(lastStatus));
+      if (willRetry) {
+        if (!bufferedErrorBody) {
+          try {
+            await upstreamRes.arrayBuffer();
+          } catch {
+            lastErrorInfo = {
+              message: "upstream_body_read_failed",
+              upstream_url: null,
+              code: null,
+              cause_code: null
+            };
+          }
         }
         continue;
+      }
+
+      if (bufferedErrorBody) {
+        res.status(lastStatus);
+        upstreamRes.headers.forEach((value, name) => {
+          const n = name.toLowerCase();
+          if (n === "transfer-encoding") return;
+          if (n === "content-encoding") return;
+          res.setHeader(name, value);
+        });
+        res.end(bufferedErrorBody);
+        return;
       }
 
       sendUpstreamResponse(res, upstreamRes);
