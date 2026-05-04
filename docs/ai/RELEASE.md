@@ -1,5 +1,9 @@
 # Release Log
 
+## v1.2.0
+- **Feat (UI)**: New "重置用量" / "Reset usage" button in the Monitor toolbar (left of the Bars checkbox). Two-click confirmation. Calls a new `POST /admin/stats/reset` endpoint that clears the usage map, per-key timeseries, and Prometheus request/duration counters, then flushes `stats.json`. Does not touch `state.json` — keys, cooldowns, and `disabledReason` are preserved.
+- **Fix**: Detect Google's `API_KEY_INVALID` / `API_KEY_EXPIRED` / `API_KEY_REVOKED` (returned as HTTP 400) and similar OpenAI / Anthropic auth-failure shapes in 4xx response bodies. The matched key gets `disabledReason: "auth_failed"` and drops out of the pool, surfacing in the UI as the red "认证失败" badge with a "解除禁用" button. Cross-key retry still proceeds. Previously a 400-with-API_KEY_INVALID looked like a routine 4xx and the bad key kept being picked.
+
 ## v1.1.1
 - **Fix (UI)**: The keys table now auto-refreshes every 5 s while the tab is visible (paused while backgrounded, resumed on focus). Previously the 45-s 429 cooldown was usually over before anyone could see it because the page only refreshed on a manual click.
 - **Fix (UI)**: Cooling keys now render an orange badge `<status> · <seconds>s` (e.g. `429 · 42s`) sourced from `/admin/stats.lastStatus`, with a tooltip explaining the cooldown reason and auto-resume time. Row gets a faint orange tint, mirroring the red tint already used for `auth_failed`.
