@@ -1111,6 +1111,15 @@ app.put("/admin/keys/:id", requireAdmin, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post("/admin/stats/reset", requireAdmin, async (req, res) => {
+  perKeyUsage.clear();
+  perKeySeries.clear();
+  try { metricRequestsTotal.reset(); } catch {}
+  try { metricRequestDuration.reset(); } catch {}
+  await flushStatsNow();
+  res.json({ ok: true });
+});
+
 app.delete("/admin/keys/:id", requireAdmin, async (req, res) => {
   const id = req.params.id;
   const state = getState();

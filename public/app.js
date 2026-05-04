@@ -118,6 +118,10 @@ const I18N = {
     "monitor.col.select": "选中",
     "monitor.toggle.bars": "柱状图",
     "monitor.toggle.line": "折线(耗时)",
+    "monitor.btn.resetUsage": "重置用量",
+    "monitor.btn.resetUsageConfirm": "确认重置",
+    "monitor.btn.resetUsageOk": "用量已重置",
+    "monitor.btn.resetUsageFail": "重置失败：{message}",
     "monitor.selected": "已选择 {count} 个 Key",
     "monitor.selected.none": "未选择 Key（在上表勾选后显示图表）",
     "monitor.chart.loading": "加载图表中…",
@@ -253,6 +257,10 @@ const I18N = {
     "monitor.col.select": "Select",
     "monitor.toggle.bars": "Bars",
     "monitor.toggle.line": "Line (latency)",
+    "monitor.btn.resetUsage": "Reset usage",
+    "monitor.btn.resetUsageConfirm": "Confirm reset",
+    "monitor.btn.resetUsageOk": "Usage reset",
+    "monitor.btn.resetUsageFail": "Reset failed: {message}",
     "monitor.selected": "{count} key(s) selected",
     "monitor.selected.none": "No keys selected (tick checkboxes above to show charts)",
     "monitor.chart.loading": "Loading chart…",
@@ -1263,6 +1271,47 @@ async function main() {
   });
 
   document.getElementById("btnRefresh").addEventListener("click", refreshAll);
+
+  const btnResetUsage = document.getElementById("btnResetUsage");
+  if (btnResetUsage) {
+    btnResetUsage.addEventListener("click", async () => {
+      const hintEl = document.getElementById("monitorSelectedHint");
+      if (btnResetUsage.dataset.confirming !== "1") {
+        btnResetUsage.dataset.confirming = "1";
+        const original = btnResetUsage.textContent;
+        btnResetUsage.dataset.original = original;
+        btnResetUsage.textContent = t("monitor.btn.resetUsageConfirm");
+        btnResetUsage.classList.add("danger");
+        setTimeout(() => {
+          if (btnResetUsage.dataset.confirming === "1") {
+            btnResetUsage.dataset.confirming = "0";
+            btnResetUsage.textContent = btnResetUsage.dataset.original || t("monitor.btn.resetUsage");
+            btnResetUsage.classList.remove("danger");
+          }
+        }, 2500);
+        return;
+      }
+      btnResetUsage.disabled = true;
+      try {
+        await api("/admin/stats/reset", { method: "POST", headers: headers() });
+        if (hintEl) {
+          hintEl.textContent = t("monitor.btn.resetUsageOk");
+          hintEl.classList.remove("error");
+        }
+        await refreshAll();
+      } catch (err) {
+        if (hintEl) {
+          hintEl.textContent = t("monitor.btn.resetUsageFail", { message: err.message });
+          hintEl.classList.add("error");
+        }
+      } finally {
+        btnResetUsage.disabled = false;
+        btnResetUsage.dataset.confirming = "0";
+        btnResetUsage.textContent = btnResetUsage.dataset.original || t("monitor.btn.resetUsage");
+        btnResetUsage.classList.remove("danger");
+      }
+    });
+  }
 
   document.getElementById("toggleBars").addEventListener("change", async (e) => {
     setBarsEnabled(e.target.checked);
